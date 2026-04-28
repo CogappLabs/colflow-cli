@@ -16,10 +16,12 @@ import (
 func NewSample() *cobra.Command {
 	var n int
 	var asJSON bool
+	var where []string
+	var maxScan int
 	cmd := &cobra.Command{
 		Use:   "sample [file.parquet | asset_name]",
-		Short: "Pretty-print N rows from a parquet file",
-		Long:  "Pretty-print rows. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet.",
+		Short: "Pretty-print N rows from a parquet file (optionally filtered)",
+		Long:  "Pretty-print rows. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet. Repeatable --where field=value filters by equality (dot-paths supported, e.g. artist.name=Alice).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := resolveOrPick(args)
@@ -37,6 +39,11 @@ func NewSample() *cobra.Command {
 				return fmt.Errorf("expected .parquet file, got: %s", path)
 			}
 
+			filters, err := parseWhere(where)
+			if err != nil {
+				return err
+			}
+
 			f, err := os.Open(path)
 			if err != nil {
 				return err
@@ -52,14 +59,31 @@ func NewSample() *cobra.Command {
 			reader := parquet.NewReader(pf, schema)
 			defer reader.Close()
 
-			rows := make([]parquet.Row, n)
-			read, err := reader.ReadRows(rows)
-			if err != nil && !errors.Is(err, io.EOF) {
-				return err
-			}
-			rows = rows[:read]
-
 			cols := schema.Columns()
+			rows := []parquet.Row{}
+			scanned := 0
+			batchSize := 64
+			if len(filters) == 0 {
+				batchSize = n
+			}
+			for len(rows) < n && scanned < maxScan {
+				batch := make([]parquet.Row, batchSize)
+				read, err := reader.ReadRows(batch)
+				if read > 0 {
+					for i := 0; i < read && len(rows) < n; i++ {
+						scanned++
+						if len(filters) == 0 || matchesFilters(rowToMap(schema, cols, batch[i]), filters) {
+							rows = append(rows, batch[i])
+						}
+					}
+				}
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return err
+				}
+			}
 
 			if asJSON {
 				out := make([]map[string]any, len(rows))
@@ -97,9 +121,46 @@ func NewSample() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().IntVarP(&n, "rows", "n", 5, "Number of rows")
+	cmd.Flags().IntVarP(&n, "rows", "n", 5, "Number of rows to return")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
+	cmd.Flags().StringArrayVar(&where, "where", nil, "Filter rows by field=value (repeatable, dot-paths for nested)")
+	cmd.Flags().IntVar(&maxScan, "max-scan", 1_000_000, "Max rows scanned when filtering before giving up")
 	return cmd
+}
+
+type filter struct {
+	Path  []string
+	Value string
+}
+
+func parseWhere(specs []string) ([]filter, error) {
+	out := make([]filter, 0, len(specs))
+	for _, s := range specs {
+		idx := strings.Index(s, "=")
+		if idx <= 0 {
+			return nil, fmt.Errorf("--where %q must be field=value", s)
+		}
+		field := strings.TrimSpace(s[:idx])
+		val := s[idx+1:]
+		out = append(out, filter{Path: strings.Split(field, "."), Value: val})
+	}
+	return out, nil
+}
+
+func matchesFilters(row map[string]any, filters []filter) bool {
+	for _, f := range filters {
+		v := lookupNested(row, f.Path)
+		if v == nil {
+			if f.Value == "" || strings.EqualFold(f.Value, "null") {
+				continue
+			}
+			return false
+		}
+		if fmt.Sprint(v) != f.Value {
+			return false
+		}
+	}
+	return true
 }
 
 func rowToMap(schema *parquet.Schema, cols [][]string, row parquet.Row) map[string]any {
