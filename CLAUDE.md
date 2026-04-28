@@ -72,4 +72,4 @@ Token: `TAP_GITHUB_TOKEN` repo secret (PAT with `contents:write` on the tap repo
 
 ## Project status
 
-Public repo (`CogappLabs/colflow-cli`) — release tarballs anonymously downloadable. Distribution via private Homebrew tap (`CogappLabs/homebrew-tap`) — users need SSH access to the tap repo to add it: `brew tap CogappLabs/tap git@github.com:CogappLabs/homebrew-tap.git`.
+Public repo (`CogappLabs/colflow-cli`) — release tarballs anonymously downloadable. Public Homebrew tap (`CogappLabs/homebrew-tap`) — `brew tap CogappLabs/tap && brew install colflow` is enough.

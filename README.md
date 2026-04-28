@@ -4,10 +4,8 @@ CLI for Dagster collection-flow pipelines, parquet inspection, asset scaffolding
 
 ## Install (Homebrew)
 
-The release binaries live on the public `CogappLabs/colflow-cli` repo. The Homebrew tap is private, so cloning it needs SSH access to `CogappLabs/homebrew-tap`.
-
 ```sh
-brew tap CogappLabs/tap git@github.com:CogappLabs/homebrew-tap.git
+brew tap CogappLabs/tap
 brew install colflow
 ```
 
