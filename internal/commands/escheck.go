@@ -37,9 +37,18 @@ type esIndex struct {
 	StoreSize string `json:"store.size"`
 }
 
+// resolveEnvRef returns the value of $NAME if v is "$NAME" (env-var ref),
+// otherwise returns v unchanged.
+func resolveEnvRef(v string) string {
+	if strings.HasPrefix(v, "$") && len(v) > 1 {
+		return os.Getenv(v[1:])
+	}
+	return v
+}
+
 func esURL(flag string) string {
-	if flag != "" {
-		return strings.TrimRight(flag, "/")
+	if v := resolveEnvRef(flag); v != "" {
+		return strings.TrimRight(v, "/")
 	}
 	if v := os.Getenv("ELASTICSEARCH_URL"); v != "" {
 		return strings.TrimRight(v, "/")
@@ -48,8 +57,8 @@ func esURL(flag string) string {
 }
 
 func esAuth(flag string) string {
-	if flag != "" {
-		return flag
+	if v := resolveEnvRef(flag); v != "" {
+		return v
 	}
 	return os.Getenv("ELASTICSEARCH_API_KEY")
 }
@@ -315,8 +324,8 @@ func NewESCheck() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "ES base URL (default: $ELASTICSEARCH_URL or http://localhost:9200)")
-	cmd.Flags().StringVar(&apiKey, "api-key", "", "ES API key (default: $ELASTICSEARCH_API_KEY)")
+	cmd.Flags().StringVar(&url, "url", "", "ES base URL, or '$VAR' to read from env (default: $ELASTICSEARCH_URL or http://localhost:9200)")
+	cmd.Flags().StringVar(&apiKey, "api-key", "", "ES API key, or '$VAR' to read from env (default: $ELASTICSEARCH_API_KEY)")
 	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS verification")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
 	cmd.Flags().BoolVar(&withIndices, "indices", false, "List indices via /_cat/indices")
