@@ -218,6 +218,24 @@ colflow sensors
 colflow jobs
 ```
 
+### Dev server
+
+#### `colflow start` — start the Dagster dev server
+
+Wraps `uv run dg dev` from the project root.
+
+```sh
+colflow start
+```
+
+#### `colflow debug` — start the Dagster dev server with debugpy
+
+Wraps `DAGSTER_DEBUG=1 uv run dg dev`. Listens for an IDE debugger on port 5678.
+
+```sh
+colflow debug
+```
+
 ### Data
 
 - `colflow inspect [file | asset_name]` — schema tree (Parquet list/map collapsed), size, rows, populated %, plus Dagster metadata when the asset is known: group, kinds, stale status + causes, last materialisation datetime, upstream/downstream deps.

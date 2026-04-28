@@ -9,7 +9,7 @@ Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL, reads Parqu
 - `internal/format/` — terminal output helpers (colour, `TimeAgo`, `FormatTimestamp`, `PadRight`). `PadRight` is ANSI-aware.
 - `internal/prompts/` — interactive numbered pickers (`Pick`, `SelectRun`, `SelectAsset`, `SelectJob`) and free-text prompts (`Ask`, `Confirm`). Shared `bufio.Reader` so piped stdin flows through successive prompts.
 - `internal/project/` — detect project root via `pyproject.toml`, derive package name + `output/` + `defs/assets/` paths. `LoadDotEnv` calls godotenv on `<root>/.env` and `.env.local`. Resolves bare asset names to `<root>/output/<name>.parquet`.
-- `internal/commands/` — one file per command, each returning a `*cobra.Command`. `common.go` has `CommonFlags` (`--url`, `--auth`, `--json`) and `PrintJSON` helper. `treeprint.go` builds the Parquet schema tree (collapses list/map wrappers). `escheck.go` is the Elasticsearch helper. `templates/` holds embedded `.tmpl` files used by `new-asset` (text/template).
+- `internal/commands/` — one file per command, each returning a `*cobra.Command`. `common.go` has `CommonFlags` (`--url`, `--auth`, `--json`) and `PrintJSON` helper. `treeprint.go` builds the Parquet schema tree (collapses list/map wrappers). `escheck.go` is the Elasticsearch helper. `devserver.go` wraps `uv run dg dev` for `start` / `debug` (foreground, inherits stdio). `templates/` holds embedded `.tmpl` files used by `new-asset` (text/template).
 
 ## Conventions
 
@@ -30,6 +30,11 @@ Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL, reads Parqu
 3. For Parquet args: call `resolveOrPick(args)` (defined in `inspect.go`) for consistent picker behaviour.
 4. Register in `cmd/colflow/main.go`.
 5. Build: `go build -o colflow ./cmd/colflow`.
+6. After adding: update both `README.md` (per-command section + vs-dg table) and `CLAUDE.md` (this file's architecture map if file structure changed).
+
+## Available commands
+
+`status`, `runs`, `run`, `logs`, `errors`, `tail`, `launch`, `materialise`, `cancel`, `reload`, `diff`, `assets`, `asset`, `graph`, `stale`, `config`, `sensors`, `jobs`, `inspect`, `sample`, `new-asset`, `es-check`, `start`, `debug`. (24 commands.)
 
 ## GraphQL schema notes
 
