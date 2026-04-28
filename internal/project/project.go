@@ -7,7 +7,26 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/joho/godotenv"
 )
+
+// LoadDotEnv loads .env and .env.local from the project root if a pyproject.toml
+// is found by walking up from start. Existing process env vars are NOT overridden.
+// Silent on missing files. Returns the project Info if detected, else nil.
+func LoadDotEnv(start string) *Info {
+	info, err := Detect(start)
+	if err != nil {
+		return nil
+	}
+	for _, name := range []string{".env", ".env.local"} {
+		path := filepath.Join(info.Root, name)
+		if _, err := os.Stat(path); err == nil {
+			_ = godotenv.Load(path) // godotenv.Load does not override existing env vars
+		}
+	}
+	return info
+}
 
 type Info struct {
 	Root        string // project root (dir containing pyproject.toml)

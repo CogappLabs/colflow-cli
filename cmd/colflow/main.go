@@ -5,10 +5,15 @@ import (
 	"os"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/commands"
+	"github.com/lukew-cogapp/colflow-cli/internal/project"
 	"github.com/spf13/cobra"
 )
 
 func main() {
+	// Auto-load <project-root>/.env and .env.local if running inside a colflow
+	// project. Existing OS env vars take precedence.
+	project.LoadDotEnv(project.Cwd())
+
 	root := &cobra.Command{
 		Use:           "colflow",
 		Short:         "Collection-flow CLI — Dagster pipelines, data, and operations",
