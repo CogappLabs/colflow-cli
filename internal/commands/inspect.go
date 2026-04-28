@@ -212,9 +212,30 @@ func resolveOrPick(args []string) (string, error) {
 	if len(files) == 0 {
 		return "", fmt.Errorf("no parquet files in output/")
 	}
+
+	// Build set of known Dagster asset basenames once. Silent on Dagster failure.
+	assetSet := map[string]struct{}{}
+	if graph, err := client.GetAssetGraph(); err == nil {
+		for _, n := range graph {
+			if len(n.AssetKey.Path) > 0 {
+				assetSet[n.AssetKey.Path[len(n.AssetKey.Path)-1]] = struct{}{}
+			}
+		}
+	}
+
 	items := make([]prompts.Item[string], len(files))
 	for i, f := range files {
-		items[i] = prompts.Item[string]{Display: filepath.Base(f), Value: f}
+		base := filepath.Base(f)
+		stem := strings.TrimSuffix(base, ".parquet")
+		var tag string
+		if _, ok := assetSet[stem]; ok {
+			tag = format.Green(" [asset]")
+		} else if strings.HasSuffix(stem, "_cache") {
+			tag = format.Gray(" [cache]")
+		} else if len(assetSet) > 0 {
+			tag = format.Yellow(" [orphan]")
+		}
+		items[i] = prompts.Item[string]{Display: base + tag, Value: f}
 	}
 	picked, ok := prompts.Pick("Parquet files in output/", items)
 	if !ok {
