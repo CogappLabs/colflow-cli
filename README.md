@@ -41,9 +41,29 @@ go build -o colflow ./cmd/colflow
 
 When a command runs inside a colflow project (parent directory has `pyproject.toml`), `<project-root>/.env` and `.env.local` are loaded automatically. Existing OS env vars take precedence. Combined with `'$VAR'` flag syntax: `colflow es-check --url '$ELASTICSEARCH_URL'` works without manually exporting.
 
+## Where to run colflow
+
+Run from inside a colflow project — anywhere from the project root or any subdirectory works. `colflow` walks up looking for `pyproject.toml`.
+
+| Command | Needs to be inside a project? |
+|---------|-------------------------------|
+| `inspect`, `sample`, `new-asset`, `start`, `debug` | Yes (uses project root + `output/` + `defs/assets/`) |
+| `es-check` | No, but `.env` auto-load only triggers inside a project |
+| All Dagster commands (`status`, `runs`, etc.) | No (they hit `DAGSTER_GRAPHQL_URL`) |
+
+Examples:
+
+```sh
+cd ~/git/<your-project>
+colflow status                       # any project subdir is fine
+colflow inspect constituents         # bare name → <root>/output/constituents.parquet
+```
+
+If you run a project-aware command outside a project, you'll get `no pyproject.toml found in any parent directory`.
+
 ## Project conventions
 
-`inspect`, `sample`, and `new-asset` auto-detect the project by walking up from the current directory looking for `pyproject.toml`. They expect:
+`inspect`, `sample`, and `new-asset` expect:
 
 - Parquet outputs in `<project-root>/output/`
 - Python package at `<project-root>/src/<package>/`
