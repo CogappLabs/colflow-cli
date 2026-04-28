@@ -1,31 +1,35 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewRuns() *cobra.Command {
-	flags := &CommonFlags{}
-	var limit int
-	var status string
-	cmd := &cobra.Command{
-		Use:   "runs",
-		Short: "List recent pipeline runs",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewRuns() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.IntFlag{Name: "limit", Aliases: []string{"l"}, Value: 10, Usage: "Number of runs to show"},
+		&cli.StringFlag{Name: "status", Aliases: []string{"s"}, Usage: "Filter by status (SUCCESS, FAILURE, STARTED, etc)"},
+	)
+	return &cli.Command{
+		Name:  "runs",
+		Usage: "List recent pipeline runs",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			limit := int(c.Int("limit"))
 			if limit < 1 || limit > 100 {
 				return fmt.Errorf("--limit must be 1..100")
 			}
-			runs, err := client.GetRuns(limit, status)
+			runs, err := client.GetRuns(limit, c.String("status"))
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(runs)
 				return nil
 			}
@@ -65,8 +69,4 @@ func NewRuns() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().IntVarP(&limit, "limit", "l", 10, "Number of runs to show")
-	cmd.Flags().StringVarP(&status, "status", "s", "", "Filter by status (SUCCESS, FAILURE, STARTED, etc)")
-	AddCommon(cmd, flags)
-	return cmd
 }

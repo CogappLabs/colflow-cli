@@ -1,23 +1,26 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewCancel() *cobra.Command {
-	flags := &CommonFlags{}
-	var id string
-	cmd := &cobra.Command{
-		Use:   "cancel",
-		Short: "Cancel a running or queued run",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			runID := id
+func NewCancel() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "id", Usage: "Run ID to cancel"},
+	)
+	return &cli.Command{
+		Name:  "cancel",
+		Usage: "Cancel a running or queued run",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			runID := c.String("id")
 			if runID == "" {
 				v, ok := prompts.SelectRun()
 				if !ok {
@@ -29,7 +32,7 @@ func NewCancel() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(map[string]string{"runId": runID, "status": status})
 				return nil
 			}
@@ -37,7 +40,4 @@ func NewCancel() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&id, "id", "", "Run ID to cancel")
-	AddCommon(cmd, flags)
-	return cmd
 }

@@ -1,26 +1,27 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewStale() *cobra.Command {
-	flags := &CommonFlags{}
-	cmd := &cobra.Command{
-		Use:   "stale",
-		Short: "List stale assets that need re-materialisation",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewStale() *cli.Command {
+	return &cli.Command{
+		Name:  "stale",
+		Usage: "List stale assets that need re-materialisation",
+		Flags: CommonFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			stale, err := client.GetStaleAssets()
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(stale)
 				return nil
 			}
@@ -57,13 +58,11 @@ func NewStale() *cobra.Command {
 					format.Gray(group),
 					format.Gray("last: "+lastMat),
 				)
-				for _, c := range a.StaleCauses {
-					fmt.Println(format.Gray(fmt.Sprintf("         %s: %s (%s)", c.Category, c.Reason, strings.Join(c.Key.Path, "/"))))
+				for _, cs := range a.StaleCauses {
+					fmt.Println(format.Gray(fmt.Sprintf("         %s: %s (%s)", cs.Category, cs.Reason, strings.Join(cs.Key.Path, "/"))))
 				}
 			}
 			return nil
 		},
 	}
-	AddCommon(cmd, flags)
-	return cmd
 }

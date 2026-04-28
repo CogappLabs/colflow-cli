@@ -1,22 +1,27 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewMaterialise() *cobra.Command {
-	flags := &CommonFlags{}
-	var asset, assets string
-	cmd := &cobra.Command{
-		Use:   "materialise",
-		Short: "Materialise specific assets by name",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewMaterialise() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "asset", Usage: "Single asset name to materialise"},
+		&cli.StringFlag{Name: "assets", Usage: "Comma-separated asset names"},
+	)
+	return &cli.Command{
+		Name:  "materialise",
+		Usage: "Materialise specific assets by name",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			asset, assets := c.String("asset"), c.String("assets")
 			var names []string
 			if assets != "" {
 				for _, s := range strings.Split(assets, ",") {
@@ -31,7 +36,7 @@ func NewMaterialise() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(map[string]any{"runId": runID, "assets": names})
 				return nil
 			}
@@ -39,8 +44,4 @@ func NewMaterialise() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&asset, "asset", "", "Single asset name to materialise")
-	cmd.Flags().StringVar(&assets, "assets", "", "Comma-separated asset names")
-	AddCommon(cmd, flags)
-	return cmd
 }

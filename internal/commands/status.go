@@ -1,21 +1,22 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewStatus() *cobra.Command {
-	flags := &CommonFlags{}
-	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Quick pipeline health summary",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewStatus() *cli.Command {
+	return &cli.Command{
+		Name:  "status",
+		Usage: "Quick pipeline health summary",
+		Flags: CommonFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			rc, err := client.GetRunCounts()
 			if err != nil {
 				return err
@@ -31,7 +32,7 @@ func NewStatus() *cobra.Command {
 				}
 			}
 
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(map[string]any{
 					"latest": rc.Latest,
 					"counts": rc.Counts,
@@ -62,6 +63,4 @@ func NewStatus() *cobra.Command {
 			return nil
 		},
 	}
-	AddCommon(cmd, flags)
-	return cmd
 }

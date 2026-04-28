@@ -1,12 +1,13 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 func topoSort(nodes []client.AssetGraphNode) []client.AssetGraphNode {
@@ -38,18 +39,18 @@ func topoSort(nodes []client.AssetGraphNode) []client.AssetGraphNode {
 	return result
 }
 
-func NewGraph() *cobra.Command {
-	flags := &CommonFlags{}
-	cmd := &cobra.Command{
-		Use:   "graph",
-		Short: "Show the asset dependency graph",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewGraph() *cli.Command {
+	return &cli.Command{
+		Name:  "graph",
+		Usage: "Show the asset dependency graph",
+		Flags: CommonFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			nodes, err := client.GetAssetGraph()
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(nodes)
 				return nil
 			}
@@ -116,6 +117,4 @@ func NewGraph() *cobra.Command {
 			return nil
 		},
 	}
-	AddCommon(cmd, flags)
-	return cmd
 }

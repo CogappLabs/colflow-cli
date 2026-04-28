@@ -1,24 +1,27 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewRun() *cobra.Command {
-	flags := &CommonFlags{}
-	var id string
-	var events int
-	cmd := &cobra.Command{
-		Use:   "run",
-		Short: "Get details and logs for a specific run",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			runID := id
+func NewRun() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "id", Usage: "Run ID"},
+		&cli.IntFlag{Name: "events", Aliases: []string{"e"}, Value: 20, Usage: "Number of log events to show"},
+	)
+	return &cli.Command{
+		Name:  "run",
+		Usage: "Get details and logs for a specific run",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			runID := c.String("id")
 			if runID == "" {
 				v, ok := prompts.SelectRun()
 				if !ok {
@@ -30,12 +33,13 @@ func NewRun() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			events := int(c.Int("events"))
 			tail := d.Events
 			if len(tail) > events {
 				tail = tail[len(tail)-events:]
 			}
 
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(map[string]any{"run": d.Run, "events": tail})
 				return nil
 			}
@@ -68,8 +72,4 @@ func NewRun() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&id, "id", "", "Run ID")
-	cmd.Flags().IntVarP(&events, "events", "e", 20, "Number of log events to show")
-	AddCommon(cmd, flags)
-	return cmd
 }

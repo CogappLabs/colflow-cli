@@ -1,13 +1,14 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/project"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 func runDgDev(debug bool) error {
@@ -33,23 +34,27 @@ func runDgDev(debug bool) error {
 	return c.Run()
 }
 
-func NewStart() *cobra.Command {
-	return &cobra.Command{
-		Use:   "start",
-		Short: "Start the Dagster dev server (uv run dg dev)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+func NewStart() *cli.Command {
+	return &cli.Command{
+		Name:  "start",
+		Usage: "Start the Dagster dev server (uv run dg dev)",
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if c.NArg() > 0 {
+				return fmt.Errorf("start takes no arguments")
+			}
 			return runDgDev(false)
 		},
 	}
 }
 
-func NewDebug() *cobra.Command {
-	return &cobra.Command{
-		Use:   "debug",
-		Short: "Start the Dagster dev server with debugpy (DAGSTER_DEBUG=1 uv run dg dev)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+func NewDebug() *cli.Command {
+	return &cli.Command{
+		Name:  "debug",
+		Usage: "Start the Dagster dev server with debugpy (DAGSTER_DEBUG=1 uv run dg dev)",
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if c.NArg() > 0 {
+				return fmt.Errorf("debug takes no arguments")
+			}
 			return runDgDev(true)
 		},
 	}

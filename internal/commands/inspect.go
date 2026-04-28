@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 	"github.com/lukew-cogapp/colflow-cli/internal/project"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
 	"github.com/parquet-go/parquet-go"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 // printDagsterSection looks up parquet basename as a Dagster asset and prints
@@ -79,20 +80,26 @@ func printDagsterSection(parquetPath string) {
 	if len(detail.StaleCauses) > 0 {
 		fmt.Println()
 		fmt.Println(format.Bold("  Stale causes:"))
-		for _, c := range detail.StaleCauses {
-			fmt.Printf("    %s: %s (%s)\n", format.Yellow(c.Category), c.Reason, strings.Join(c.Key.Path, "/"))
+		for _, cs := range detail.StaleCauses {
+			fmt.Printf("    %s: %s (%s)\n", format.Yellow(cs.Category), cs.Reason, strings.Join(cs.Key.Path, "/"))
 		}
 	}
 }
 
-func NewInspect() *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "inspect [file.parquet | asset_name]",
-		Short: "Inspect a parquet file: schema, row count, populated %, Dagster info",
-		Long:  "Inspect a parquet file. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet.",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+func NewInspect() *cli.Command {
+	return &cli.Command{
+		Name:        "inspect",
+		Usage:       "Inspect a parquet file: schema, row count, populated %, Dagster info",
+		Description: "Inspect a parquet file. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet.",
+		ArgsUsage:   "[file.parquet | asset_name]",
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "json", Usage: "Output as JSON (LLM-friendly)"},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if c.NArg() > 1 {
+				return fmt.Errorf("inspect takes at most 1 argument")
+			}
+			args := c.Args().Slice()
 			path, err := resolveOrPick(args)
 			if err != nil {
 				return err
@@ -119,7 +126,7 @@ func NewInspect() *cobra.Command {
 				return fmt.Errorf("open parquet: %w", err)
 			}
 
-			if asJSON {
+			if c.Bool("json") {
 				return inspectJSON(path, fi.Size(), pf)
 			}
 
@@ -141,14 +148,14 @@ func NewInspect() *cobra.Command {
 			total := pf.NumRows()
 			maxLeaf := 0
 			leafLabels := make([]string, len(cols))
-			for i, path := range cols {
-				leafLabels[i] = collapseLeafPath(path)
+			for i, p := range cols {
+				leafLabels[i] = collapseLeafPath(p)
 				if len(leafLabels[i]) > maxLeaf {
 					maxLeaf = len(leafLabels[i])
 				}
 			}
-			for i, path := range cols {
-				k := strings.Join(path, ".")
+			for i, p := range cols {
+				k := strings.Join(p, ".")
 				populated := total - nulls[k]
 				pct := 0.0
 				if total > 0 {
@@ -172,8 +179,6 @@ func NewInspect() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON (LLM-friendly)")
-	return cmd
 }
 
 func inspectJSON(path string, size int64, pf *parquet.File) error {
@@ -183,9 +188,9 @@ func inspectJSON(path string, size int64, pf *parquet.File) error {
 	total := pf.NumRows()
 
 	type colInfo struct {
-		Name      string  `json:"name"`
-		NullCount int64   `json:"null_count"`
-		Populated int64   `json:"populated"`
+		Name         string  `json:"name"`
+		NullCount    int64   `json:"null_count"`
+		Populated    int64   `json:"populated"`
 		PopulatedPct float64 `json:"populated_pct"`
 	}
 	colsOut := make([]colInfo, len(cols))
@@ -232,15 +237,15 @@ func dagsterSummary(d *client.AssetDetail) map[string]any {
 		dl[i] = strings.Join(k.Path, "/")
 	}
 	res := map[string]any{
-		"asset":         strings.Join(d.AssetKey.Path, "/"),
-		"group":         d.GroupName,
-		"compute_kind":  d.ComputeKind,
-		"kinds":         d.Kinds,
-		"stale_status":  d.StaleStatus,
-		"stale_causes":  d.StaleCauses,
-		"jobs":          d.JobNames,
-		"upstream":      deps,
-		"downstream":    dl,
+		"asset":        strings.Join(d.AssetKey.Path, "/"),
+		"group":        d.GroupName,
+		"compute_kind": d.ComputeKind,
+		"kinds":        d.Kinds,
+		"stale_status": d.StaleStatus,
+		"stale_causes": d.StaleCauses,
+		"jobs":         d.JobNames,
+		"upstream":     deps,
+		"downstream":   dl,
 	}
 	if len(d.Materializations) > 0 {
 		m := d.Materializations[0]

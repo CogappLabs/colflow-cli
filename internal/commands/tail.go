@@ -10,19 +10,21 @@ import (
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewTail() *cobra.Command {
-	flags := &CommonFlags{}
-	var id string
-	var interval int
-	cmd := &cobra.Command{
-		Use:   "tail",
-		Short: "Live-follow a running job's logs",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			runID := id
+func NewTail() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "id", Usage: "Run ID to follow"},
+		&cli.IntFlag{Name: "interval", Aliases: []string{"i"}, Value: 3, Usage: "Poll interval in seconds"},
+	)
+	return &cli.Command{
+		Name:  "tail",
+		Usage: "Live-follow a running job's logs",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			runID := c.String("id")
 			if runID == "" {
 				v, ok := prompts.SelectRun()
 				if !ok {
@@ -31,16 +33,17 @@ func NewTail() *cobra.Command {
 				runID = v
 			}
 
-			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
 			fmt.Println(format.Gray(fmt.Sprintf("Tailing run %s (Ctrl+C to stop)...\n", runID)))
 
 			seen := 0
 			terminal := map[string]bool{"SUCCESS": true, "FAILURE": true, "CANCELED": true}
+			interval := int(c.Int("interval"))
 
 			for {
-				if ctx.Err() != nil {
+				if sigCtx.Err() != nil {
 					return nil
 				}
 				d, err := client.GetRun(runID)
@@ -80,16 +83,11 @@ func NewTail() *cobra.Command {
 					return nil
 				}
 				select {
-				case <-ctx.Done():
+				case <-sigCtx.Done():
 					return nil
 				case <-time.After(time.Duration(interval) * time.Second):
 				}
 			}
 		},
 	}
-	cmd.Flags().StringVar(&id, "id", "", "Run ID to follow")
-	cmd.Flags().IntVarP(&interval, "interval", "i", 3, "Poll interval in seconds")
-	cmd.Flags().StringVarP(&flags.URL, "url", "u", "", "Dagster base URL")
-	cmd.Flags().StringVarP(&flags.Auth, "auth", "a", "", "HTTP basic auth")
-	return cmd
 }

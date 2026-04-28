@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,20 +11,26 @@ import (
 
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/parquet-go/parquet-go"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewSample() *cobra.Command {
-	var n int
-	var asJSON bool
-	var where []string
-	var maxScan int
-	cmd := &cobra.Command{
-		Use:   "sample [file.parquet | asset_name]",
-		Short: "Pretty-print N rows from a parquet file (optionally filtered)",
-		Long:  "Pretty-print rows. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet. Repeatable --where field=value filters by equality (dot-paths supported, e.g. artist.name=Alice).",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+func NewSample() *cli.Command {
+	return &cli.Command{
+		Name:        "sample",
+		Usage:       "Pretty-print N rows from a parquet file (optionally filtered)",
+		Description: "Pretty-print rows. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet. Repeatable --where field=value filters by equality (dot-paths supported, e.g. artist.name=Alice).",
+		ArgsUsage:   "[file.parquet | asset_name]",
+		Flags: []cli.Flag{
+			&cli.IntFlag{Name: "rows", Aliases: []string{"n"}, Value: 5, Usage: "Number of rows to return"},
+			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
+			&cli.StringSliceFlag{Name: "where", Usage: "Filter rows by field=value (repeatable, dot-paths for nested)"},
+			&cli.IntFlag{Name: "max-scan", Value: 1_000_000, Usage: "Max rows scanned when filtering before giving up"},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if c.NArg() > 1 {
+				return fmt.Errorf("sample takes at most 1 argument")
+			}
+			args := c.Args().Slice()
 			path, err := resolveOrPick(args)
 			if err != nil {
 				return err
@@ -38,6 +45,11 @@ func NewSample() *cobra.Command {
 			if !strings.HasSuffix(strings.ToLower(path), ".parquet") {
 				return fmt.Errorf("expected .parquet file, got: %s", path)
 			}
+
+			n := int(c.Int("rows"))
+			maxScan := int(c.Int("max-scan"))
+			asJSON := c.Bool("json")
+			where := c.StringSlice("where")
 
 			filters, err := parseWhere(where)
 			if err != nil {
@@ -102,8 +114,8 @@ func NewSample() *cobra.Command {
 
 			colNames := make([]string, len(cols))
 			maxName := 0
-			for i, c := range cols {
-				colNames[i] = strings.Join(c, ".")
+			for i, cc := range cols {
+				colNames[i] = strings.Join(cc, ".")
 				if len(colNames[i]) > maxName {
 					maxName = len(colNames[i])
 				}
@@ -121,11 +133,6 @@ func NewSample() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().IntVarP(&n, "rows", "n", 5, "Number of rows to return")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
-	cmd.Flags().StringArrayVar(&where, "where", nil, "Filter rows by field=value (repeatable, dot-paths for nested)")
-	cmd.Flags().IntVar(&maxScan, "max-scan", 1_000_000, "Max rows scanned when filtering before giving up")
-	return cmd
 }
 
 type filter struct {

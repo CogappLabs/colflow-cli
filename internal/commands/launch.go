@@ -1,23 +1,26 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewLaunch() *cobra.Command {
-	flags := &CommonFlags{}
-	var job string
-	cmd := &cobra.Command{
-		Use:   "launch",
-		Short: "Launch a job run",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			name := job
+func NewLaunch() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "job", Aliases: []string{"j"}, Usage: "Job name to launch"},
+	)
+	return &cli.Command{
+		Name:  "launch",
+		Usage: "Launch a job run",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			name := c.String("job")
 			if name == "" {
 				v, ok := prompts.SelectJob()
 				if !ok {
@@ -29,7 +32,7 @@ func NewLaunch() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(map[string]string{"runId": runID, "job": name})
 				return nil
 			}
@@ -37,7 +40,4 @@ func NewLaunch() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&job, "job", "j", "", "Job name to launch")
-	AddCommon(cmd, flags)
-	return cmd
 }

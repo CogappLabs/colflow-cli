@@ -1,42 +1,45 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewConfig() *cobra.Command {
-	flags := &CommonFlags{}
-	var job string
-	cmd := &cobra.Command{
-		Use:   "config",
-		Short: "Show the run config schema for a job",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			c, err := client.GetJobConfig(job)
+func NewConfig() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "job", Aliases: []string{"j"}, Value: "full_pipeline", Usage: "Job name"},
+	)
+	return &cli.Command{
+		Name:  "config",
+		Usage: "Show the run config schema for a job",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			cfg, err := client.GetJobConfig(c.String("job"))
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
-				PrintJSON(map[string]any{"job": c.JobName, "fields": c.Fields})
+			if c.Bool("json") {
+				PrintJSON(map[string]any{"job": cfg.JobName, "fields": cfg.Fields})
 				return nil
 			}
-			fmt.Println(format.Bold(fmt.Sprintf("Config schema for %s\n", c.JobName)))
-			if len(c.Fields) == 0 {
+			fmt.Println(format.Bold(fmt.Sprintf("Config schema for %s\n", cfg.JobName)))
+			if len(cfg.Fields) == 0 {
 				fmt.Println(format.Gray("No config fields"))
 				return nil
 			}
 			maxName := 0
-			for _, f := range c.Fields {
+			for _, f := range cfg.Fields {
 				if len(f.Name) > maxName {
 					maxName = len(f.Name)
 				}
 			}
-			for _, f := range c.Fields {
+			for _, f := range cfg.Fields {
 				required := format.Gray("optional")
 				if f.IsRequired {
 					required = format.Red("required")
@@ -58,7 +61,4 @@ func NewConfig() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&job, "job", "j", "full_pipeline", "Job name")
-	AddCommon(cmd, flags)
-	return cmd
 }

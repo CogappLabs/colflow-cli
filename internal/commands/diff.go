@@ -1,11 +1,12 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 type stepSummary struct {
@@ -42,14 +43,18 @@ func formatDuration(start, end float64) string {
 	return fmt.Sprintf("%dm %ds", seconds/60, seconds%60)
 }
 
-func NewDiff() *cobra.Command {
-	flags := &CommonFlags{}
-	var run1, run2 string
-	cmd := &cobra.Command{
-		Use:   "diff",
-		Short: "Compare two runs side by side",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewDiff() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "run1", Usage: "First run ID"},
+		&cli.StringFlag{Name: "run2", Usage: "Second run ID"},
+	)
+	return &cli.Command{
+		Name:  "diff",
+		Usage: "Compare two runs side by side",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			run1, run2 := c.String("run1"), c.String("run2")
 			if run1 == "" || run2 == "" {
 				return fmt.Errorf("--run1 and --run2 required")
 			}
@@ -94,7 +99,7 @@ func NewDiff() *cobra.Command {
 				}
 			}
 
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(map[string]any{
 					"run1": map[string]any{
 						"runId":    r1.Run.RunID,
@@ -163,8 +168,4 @@ func NewDiff() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&run1, "run1", "", "First run ID")
-	cmd.Flags().StringVar(&run2, "run2", "", "Second run ID")
-	AddCommon(cmd, flags)
-	return cmd
 }

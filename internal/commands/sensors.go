@@ -1,26 +1,27 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewSensors() *cobra.Command {
-	flags := &CommonFlags{}
-	cmd := &cobra.Command{
-		Use:   "sensors",
-		Short: "Show sensor status and recent ticks",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewSensors() *cli.Command {
+	return &cli.Command{
+		Name:  "sensors",
+		Usage: "Show sensor status and recent ticks",
+		Flags: CommonFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			sensors, err := client.GetSensors()
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(sensors)
 				return nil
 			}
@@ -59,6 +60,4 @@ func NewSensors() *cobra.Command {
 			return nil
 		},
 	}
-	AddCommon(cmd, flags)
-	return cmd
 }

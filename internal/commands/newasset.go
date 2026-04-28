@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ import (
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/project"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 //go:embed templates/asset.py.tmpl
@@ -156,7 +157,6 @@ func listExistingAssets(assetsDir string) []string {
 	return out
 }
 
-
 var nameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 func toClassName(name string) string {
@@ -170,25 +170,38 @@ func toClassName(name string) string {
 	return strings.Join(parts, "")
 }
 
-func NewNewAsset() *cobra.Command {
-	var upstream, group, title string
-	var withTest bool
-	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "new-asset [name]",
-		Short: "Scaffold a new Dagster asset (Polars + Pandera schema + check)",
-		Long:  "Scaffold a new asset. With no name, runs interactively; otherwise uses flags.",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+func NewNewAsset() *cli.Command {
+	return &cli.Command{
+		Name:        "new-asset",
+		Usage:       "Scaffold a new Dagster asset (Polars + Pandera schema + check)",
+		Description: "Scaffold a new asset. With no name, runs interactively; otherwise uses flags.",
+		ArgsUsage:   "[name]",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "upstream", Usage: "Comma-separated upstream asset names (become function args)"},
+			&cli.StringFlag{Name: "group", Aliases: []string{"g"}, Value: "transform", Usage: "Asset group name"},
+			&cli.StringFlag{Name: "title", Aliases: []string{"t"}, Usage: "Asset title (default: derived from name)"},
+			&cli.BoolFlag{Name: "test", Value: true, Usage: "Also scaffold a tests/test_<name>.py file"},
+			&cli.BoolFlag{Name: "dry-run", Usage: "Print without writing"},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if c.NArg() > 1 {
+				return fmt.Errorf("new-asset takes at most 1 argument")
+			}
 			info, err := project.Detect(project.Cwd())
 			if err != nil {
 				return err
 			}
 
-			interactive := len(args) == 0
+			upstream := c.String("upstream")
+			group := c.String("group")
+			title := c.String("title")
+			withTest := c.Bool("test")
+			dryRun := c.Bool("dry-run")
+
+			interactive := c.NArg() == 0
 			var name string
 			if !interactive {
-				name = args[0]
+				name = c.Args().Get(0)
 			} else {
 				fmt.Printf("%s %s\n\n", format.Bold("New asset for"), info.Name)
 				name = prompts.Ask("Asset name (snake_case)", "")
@@ -302,10 +315,4 @@ func NewNewAsset() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&upstream, "upstream", "", "Comma-separated upstream asset names (become function args)")
-	cmd.Flags().StringVarP(&group, "group", "g", "transform", "Asset group name")
-	cmd.Flags().StringVarP(&title, "title", "t", "", "Asset title (default: derived from name)")
-	cmd.Flags().BoolVar(&withTest, "test", true, "Also scaffold a tests/test_<name>.py file")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print without writing")
-	return cmd
 }

@@ -4,17 +4,17 @@ Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL, reads Parqu
 
 ## Architecture
 
-- `cmd/colflow/main.go` — root cobra command, registers all subcommands. Calls `project.LoadDotEnv` at startup.
+- `cmd/colflow/main.go` — root urfave/cli command, registers all subcommands. Calls `project.LoadDotEnv` at startup.
 - `internal/client/` — Dagster GraphQL client. `client.go` is transport, `queries.go` per-operation wrappers, `types.go` response shapes. All Dagster API access goes through `Query()`.
 - `internal/format/` — terminal output helpers (colour, `TimeAgo`, `FormatTimestamp`, `PadRight`). `PadRight` is ANSI-aware.
 - `internal/prompts/` — interactive numbered pickers (`Pick`, `SelectRun`, `SelectAsset`, `SelectJob`) and free-text prompts (`Ask`, `Confirm`). Shared `bufio.Reader` so piped stdin flows through successive prompts.
 - `internal/project/` — detect project root via `pyproject.toml`, derive package name + `output/` + `defs/assets/` paths. `LoadDotEnv` calls godotenv on `<root>/.env` and `.env.local`. Resolves bare asset names to `<root>/output/<name>.parquet`.
-- `internal/commands/` — one file per command, each returning a `*cobra.Command`. `common.go` has `CommonFlags` (`--url`, `--auth`, `--json`) and `PrintJSON` helper. `treeprint.go` builds the Parquet schema tree (collapses list/map wrappers). `escheck.go` is the Elasticsearch helper. `devserver.go` wraps `uv run dg dev` for `start` / `debug` (foreground, inherits stdio). `templates/` holds embedded `.tmpl` files used by `new-asset` (text/template).
+- `internal/commands/` — one file per command, each returning a `*cli.Command` (urfave/cli/v3). `common.go` exposes `CommonFlags()` (`--url`, `--auth`, `--json`) + `ApplyCommon` and `PrintJSON` helpers. `treeprint.go` builds the Parquet schema tree (collapses list/map wrappers). `escheck.go` is the Elasticsearch helper. `devserver.go` wraps `uv run dg dev` for `start` / `debug` (foreground, inherits stdio). `templates/` holds embedded `.tmpl` files used by `new-asset` (text/template).
 
 ## Conventions
 
-- Cobra for CLI, no zod/validator — Cobra's `cobra.MaximumNArgs` etc. do the validation.
-- All Dagster commands accept `--url`, `--auth`, `--json`. Add via `commands.AddCommon`.
+- urfave/cli/v3 for CLI. Validate arg counts in the `Action` via `c.NArg()` checks.
+- All Dagster commands accept `--url`, `--auth`, `--json`. Append `commands.CommonFlags()...` to per-command flag slice; call `commands.ApplyCommon(c)` first thing in `Action`.
 - Inspect/sample/new-asset auto-detect the Python project by walking up from cwd. They use `project.Detect(project.Cwd())`.
 - Bare-name resolution for parquet args: literal path → `<root>/output/<arg>` → `<root>/output/<arg>.parquet`.
 - Picker tags use `format.Green("[asset]")` etc. Dagster lookup is best-effort; commands degrade gracefully when Dagster is down.
@@ -25,9 +25,9 @@ Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL, reads Parqu
 
 ## Adding a new command
 
-1. Create `internal/commands/<name>.go` returning `*cobra.Command`.
-2. Use `CommonFlags` + `AddCommon` if it talks to Dagster.
-3. For Parquet args: call `resolveOrPick(args)` (defined in `inspect.go`) for consistent picker behaviour.
+1. Create `internal/commands/<name>.go` returning `*cli.Command`.
+2. If it talks to Dagster: build flag slice with `append(CommonFlags(), <extra flags>...)`; call `ApplyCommon(c)` at start of `Action`.
+3. For Parquet args: call `resolveOrPick(c.Args().Slice())` (defined in `inspect.go`) for consistent picker behaviour.
 4. Register in `cmd/colflow/main.go`.
 5. Build: `go build -o colflow ./cmd/colflow`.
 6. After adding: update both `README.md` (per-command section + vs-dg table) and `CLAUDE.md` (this file's architecture map if file structure changed).

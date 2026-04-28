@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
 type esClusterHealth struct {
@@ -31,18 +32,18 @@ type esRoot struct {
 	ClusterName string `json:"cluster_name"`
 	ClusterUUID string `json:"cluster_uuid"`
 	Version     struct {
-		Number     string `json:"number"`
+		Number       string `json:"number"`
 		Distribution string `json:"distribution"`
 	} `json:"version"`
 }
 
 type esIndex struct {
-	Health   string `json:"health"`
-	Status   string `json:"status"`
-	Index    string `json:"index"`
-	UUID     string `json:"uuid"`
-	Pri      string `json:"pri"`
-	Rep      string `json:"rep"`
+	Health    string `json:"health"`
+	Status    string `json:"status"`
+	Index     string `json:"index"`
+	UUID      string `json:"uuid"`
+	Pri       string `json:"pri"`
+	Rep       string `json:"rep"`
 	DocsCount string `json:"docs.count"`
 	StoreSize string `json:"store.size"`
 }
@@ -213,20 +214,32 @@ func colourESStatus(status string) string {
 	return format.Gray(status)
 }
 
-func NewESCheck() *cobra.Command {
-	var url, apiKey string
-	var insecure, asJSON, withIndices bool
-	cmd := &cobra.Command{
-		Use:   "es-check [index]",
-		Short: "Test Elasticsearch connection; optionally check a specific index",
-		Long:  "Hits ES /_cluster/health. Reads ELASTICSEARCH_URL and ELASTICSEARCH_API_KEY env vars. With an index argument, also reports that index's health + doc count. With --indices, lists all indices.",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			base := esURL(url)
-			key := esAuth(apiKey)
+func NewESCheck() *cli.Command {
+	return &cli.Command{
+		Name:        "es-check",
+		Usage:       "Test Elasticsearch connection; optionally check a specific index",
+		Description: "Hits ES /_cluster/health. Reads ELASTICSEARCH_URL and ELASTICSEARCH_API_KEY env vars. With an index argument, also reports that index's health + doc count. With --indices, lists all indices.",
+		ArgsUsage:   "[index]",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "url", Usage: "ES base URL, or '$VAR' to read from env (default: $ELASTICSEARCH_URL or http://localhost:9200)"},
+			&cli.StringFlag{Name: "api-key", Usage: "ES API key, or '$VAR' to read from env (default: $ELASTICSEARCH_API_KEY)"},
+			&cli.BoolFlag{Name: "insecure", Usage: "Skip TLS verification"},
+			&cli.BoolFlag{Name: "json", Usage: "Output as JSON"},
+			&cli.BoolFlag{Name: "indices", Usage: "List indices via /_cat/indices"},
+		},
+		Action: func(ctx context.Context, c *cli.Command) error {
+			if c.NArg() > 1 {
+				return fmt.Errorf("es-check takes at most 1 argument")
+			}
+			base := esURL(c.String("url"))
+			key := esAuth(c.String("api-key"))
+			insecure := c.Bool("insecure")
+			asJSON := c.Bool("json")
+			withIndices := c.Bool("indices")
+
 			indexArg := ""
-			if len(args) == 1 {
-				indexArg = args[0]
+			if c.NArg() == 1 {
+				indexArg = c.Args().Get(0)
 			}
 
 			var health esClusterHealth
@@ -320,7 +333,7 @@ func NewESCheck() *cobra.Command {
 				if indexInfo == nil {
 					fmt.Println("  ", format.Red("not found"))
 					if indexErr != nil {
-						fmt.Println(format.Gray("  "+indexErr.Error()))
+						fmt.Println(format.Gray("  " + indexErr.Error()))
 					}
 				} else {
 					fmt.Printf("  %-14s %s\n", "Health:", colourESStatus(indexInfo.Health))
@@ -353,12 +366,6 @@ func NewESCheck() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "ES base URL, or '$VAR' to read from env (default: $ELASTICSEARCH_URL or http://localhost:9200)")
-	cmd.Flags().StringVar(&apiKey, "api-key", "", "ES API key, or '$VAR' to read from env (default: $ELASTICSEARCH_API_KEY)")
-	cmd.Flags().BoolVar(&insecure, "insecure", false, "Skip TLS verification")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
-	cmd.Flags().BoolVar(&withIndices, "indices", false, "List indices via /_cat/indices")
-	return cmd
 }
 
 // humanBytesStr passes through ES /_cat/indices store.size when it's already
@@ -367,7 +374,6 @@ func humanBytesStr(s string) string {
 	if s == "" {
 		return ""
 	}
-	// If ES sent raw bytes (digits only), format.
 	allDigits := true
 	for _, r := range s {
 		if r < '0' || r > '9' {

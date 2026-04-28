@@ -1,26 +1,27 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewAssets() *cobra.Command {
-	flags := &CommonFlags{}
-	cmd := &cobra.Command{
-		Use:   "assets",
-		Short: "List all assets with last materialization",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewAssets() *cli.Command {
+	return &cli.Command{
+		Name:  "assets",
+		Usage: "List all assets with last materialization",
+		Flags: CommonFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			assets, err := client.GetAssets()
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(assets)
 				return nil
 			}
@@ -59,6 +60,4 @@ func NewAssets() *cobra.Command {
 			return nil
 		},
 	}
-	AddCommon(cmd, flags)
-	return cmd
 }

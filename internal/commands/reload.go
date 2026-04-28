@@ -1,25 +1,26 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewReload() *cobra.Command {
-	flags := &CommonFlags{}
-	cmd := &cobra.Command{
-		Use:   "reload",
-		Short: "Reload Dagster code location",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
+func NewReload() *cli.Command {
+	return &cli.Command{
+		Name:  "reload",
+		Usage: "Reload Dagster code location",
+		Flags: CommonFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			r, err := client.ReloadLocation()
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(r)
 				return nil
 			}
@@ -37,6 +38,4 @@ func NewReload() *cobra.Command {
 			return nil
 		},
 	}
-	AddCommon(cmd, flags)
-	return cmd
 }

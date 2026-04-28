@@ -1,24 +1,27 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewAsset() *cobra.Command {
-	flags := &CommonFlags{}
-	var key string
-	cmd := &cobra.Command{
-		Use:   "asset",
-		Short: "Show detailed info for a specific asset",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			k := key
+func NewAsset() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "key", Aliases: []string{"k"}, Usage: "Asset key path (e.g. raw_catalog)"},
+	)
+	return &cli.Command{
+		Name:  "asset",
+		Usage: "Show detailed info for a specific asset",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			k := c.String("key")
 			if k == "" {
 				v, ok := prompts.SelectAsset()
 				if !ok {
@@ -30,7 +33,7 @@ func NewAsset() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(asset)
 				return nil
 			}
@@ -82,8 +85,8 @@ func NewAsset() *cobra.Command {
 			if len(asset.StaleCauses) > 0 {
 				fmt.Println()
 				fmt.Println(format.Bold("  Stale causes:"))
-				for _, c := range asset.StaleCauses {
-					fmt.Printf("    %s: %s (%s)\n", format.Yellow(c.Category), c.Reason, strings.Join(c.Key.Path, "/"))
+				for _, cs := range asset.StaleCauses {
+					fmt.Printf("    %s: %s (%s)\n", format.Yellow(cs.Category), cs.Reason, strings.Join(cs.Key.Path, "/"))
 				}
 			}
 			if len(asset.Materializations) > 0 {
@@ -112,9 +115,6 @@ func NewAsset() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&key, "key", "k", "", "Asset key path (e.g. raw_catalog)")
-	AddCommon(cmd, flags)
-	return cmd
 }
 
 func strOr(p *string, def string) string {

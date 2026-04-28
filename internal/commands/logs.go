@@ -1,24 +1,30 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewLogs() *cobra.Command {
-	flags := &CommonFlags{}
-	var id, step, level, grep string
-	cmd := &cobra.Command{
-		Use:   "logs",
-		Short: "View filtered logs for a run",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			runID := id
+func NewLogs() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "id", Usage: "Run ID"},
+		&cli.StringFlag{Name: "step", Aliases: []string{"s"}, Usage: "Filter by step key"},
+		&cli.StringFlag{Name: "level", Aliases: []string{"l"}, Usage: "Filter by level"},
+		&cli.StringFlag{Name: "grep", Aliases: []string{"g"}, Usage: "Filter messages by substring"},
+	)
+	return &cli.Command{
+		Name:  "logs",
+		Usage: "View filtered logs for a run",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			runID := c.String("id")
 			if runID == "" {
 				v, ok := prompts.SelectRun()
 				if !ok {
@@ -26,10 +32,11 @@ func NewLogs() *cobra.Command {
 				}
 				runID = v
 			}
-			events, err := client.GetRunLogs(runID, client.LogFilter{Step: step, Level: strings.ToUpper(level)})
+			events, err := client.GetRunLogs(runID, client.LogFilter{Step: c.String("step"), Level: strings.ToUpper(c.String("level"))})
 			if err != nil {
 				return err
 			}
+			grep := c.String("grep")
 			if grep != "" {
 				p := strings.ToLower(grep)
 				filtered := events[:0]
@@ -41,7 +48,7 @@ func NewLogs() *cobra.Command {
 				events = filtered
 			}
 
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(events)
 				return nil
 			}
@@ -65,10 +72,4 @@ func NewLogs() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&id, "id", "", "Run ID")
-	cmd.Flags().StringVarP(&step, "step", "s", "", "Filter by step key")
-	cmd.Flags().StringVarP(&level, "level", "l", "", "Filter by level")
-	cmd.Flags().StringVarP(&grep, "grep", "g", "", "Filter messages by substring")
-	AddCommon(cmd, flags)
-	return cmd
 }

@@ -1,24 +1,27 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 )
 
-func NewErrors() *cobra.Command {
-	flags := &CommonFlags{}
-	var id string
-	cmd := &cobra.Command{
-		Use:   "errors",
-		Short: "Get Python tracebacks from a failed run",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			flags.Apply()
-			runID := id
+func NewErrors() *cli.Command {
+	flags := append(CommonFlags(),
+		&cli.StringFlag{Name: "id", Usage: "Run ID"},
+	)
+	return &cli.Command{
+		Name:  "errors",
+		Usage: "Get Python tracebacks from a failed run",
+		Flags: flags,
+		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
+			runID := c.String("id")
 			if runID == "" {
 				v, ok := prompts.SelectRun()
 				if !ok {
@@ -30,7 +33,7 @@ func NewErrors() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if flags.JSON {
+			if c.Bool("json") {
 				PrintJSON(failures)
 				return nil
 			}
@@ -55,9 +58,9 @@ func NewErrors() *cobra.Command {
 				if len(f.Error.Causes) > 0 {
 					fmt.Println()
 					fmt.Println(format.BoldRed("  Caused by:"))
-					for _, c := range f.Error.Causes {
-						fmt.Println(format.Red("    " + c.Message))
-						cs := c.Stack
+					for _, ca := range f.Error.Causes {
+						fmt.Println(format.Red("    " + ca.Message))
+						cs := ca.Stack
 						cstart := 0
 						if len(cs) > 10 {
 							cstart = len(cs) - 10
@@ -72,7 +75,4 @@ func NewErrors() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&id, "id", "", "Run ID")
-	AddCommon(cmd, flags)
-	return cmd
 }
