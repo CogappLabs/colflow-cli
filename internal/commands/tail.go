@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/signal"
 	"syscall"
@@ -36,11 +37,62 @@ func NewTail() *cli.Command {
 			sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
 
-			fmt.Println(format.Gray(fmt.Sprintf("Tailing run %s (Ctrl+C to stop)...\n", runID)))
+			asJSON := c.Bool("json")
+			if !asJSON {
+				fmt.Println(format.Gray(fmt.Sprintf("Tailing run %s (Ctrl+C to stop)...\n", runID)))
+			}
 
 			seen := 0
 			terminal := map[string]bool{"SUCCESS": true, "FAILURE": true, "CANCELED": true}
 			interval := int(c.Int("interval"))
+
+			emitEvent := func(e client.RunEvent) {
+				if asJSON {
+					b, _ := json.Marshal(map[string]any{
+						"type":      "event",
+						"run_id":    runID,
+						"level":     e.Level,
+						"step_key":  e.StepKey,
+						"message":   e.Message,
+						"timestamp": e.Timestamp,
+					})
+					fmt.Println(string(b))
+					return
+				}
+				stepStr := ""
+				if e.StepKey != nil {
+					stepStr = format.Cyan("[" + *e.StepKey + "]")
+				}
+				lvl := format.Gray(e.Level)
+				if e.Level == "ERROR" {
+					lvl = format.Red(e.Level)
+				} else if e.Level == "WARNING" {
+					lvl = format.Yellow(e.Level)
+				}
+				fmt.Printf("%s %s %s\n", lvl, stepStr, e.Message)
+			}
+
+			emitTerminal := func(d *client.RunDetail) {
+				if asJSON {
+					b, _ := json.Marshal(map[string]any{
+						"type":            "terminal",
+						"run_id":          runID,
+						"status":          d.Run.Status,
+						"steps_succeeded": d.Run.Stats.StepsSucceeded,
+						"steps_failed":    d.Run.Stats.StepsFailed,
+						"start_time":      d.Run.StartTime,
+					})
+					fmt.Println(string(b))
+					return
+				}
+				fmt.Println()
+				fmt.Printf("Run %s — %d steps succeeded, %d failed (%s)\n",
+					format.ColorStatus(d.Run.Status),
+					d.Run.Stats.StepsSucceeded,
+					d.Run.Stats.StepsFailed,
+					format.TimeAgo(d.Run.StartTime),
+				)
+			}
 
 			for {
 				if sigCtx.Err() != nil {
@@ -58,28 +110,12 @@ func NewTail() *cli.Command {
 				}
 				newEvents := filtered[seen:]
 				for _, e := range newEvents {
-					stepStr := ""
-					if e.StepKey != nil {
-						stepStr = format.Cyan("[" + *e.StepKey + "]")
-					}
-					lvl := format.Gray(e.Level)
-					if e.Level == "ERROR" {
-						lvl = format.Red(e.Level)
-					} else if e.Level == "WARNING" {
-						lvl = format.Yellow(e.Level)
-					}
-					fmt.Printf("%s %s %s\n", lvl, stepStr, e.Message)
+					emitEvent(e)
 				}
 				seen += len(newEvents)
 
 				if terminal[d.Run.Status] {
-					fmt.Println()
-					fmt.Printf("Run %s — %d steps succeeded, %d failed (%s)\n",
-						format.ColorStatus(d.Run.Status),
-						d.Run.Stats.StepsSucceeded,
-						d.Run.Stats.StepsFailed,
-						format.TimeAgo(d.Run.StartTime),
-					)
+					emitTerminal(d)
 					return nil
 				}
 				select {
