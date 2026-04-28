@@ -76,6 +76,22 @@ No-arg form lists `output/` with tags: `[asset]` (matches Dagster), `[orphan]` (
   - `--json` for structured output.
   - Pretty error output with hints for common failure modes (401/403/404/429/503, DNS, connection-refused, TLS, timeout).
 
+Examples:
+
+```sh
+# Use ELASTICSEARCH_URL + ELASTICSEARCH_API_KEY from .env automatically
+colflow es-check
+
+# Check a specific index
+colflow es-check collection_documents
+
+# Pull from a non-default env var (single-quote so the shell doesn't expand $)
+colflow es-check --url '$ELASTICO_URL' --api-key '$ELASTICO_API_KEY'
+
+# List all indices, JSON output
+colflow es-check --indices --json
+```
+
 ### Scaffolding
 
 - `colflow new-asset [name]` — generate Dagster asset (Polars `pl.LazyFrame` + Pandera schema + asset_check) and a test stub. With no name, runs interactively:
