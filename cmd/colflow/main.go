@@ -20,6 +20,7 @@ func main() {
 	root.AddCommand(
 		commands.NewInspect(),
 		commands.NewSample(),
+		commands.NewSchema(),
 		commands.NewNewAsset(),
 		commands.NewStatus(),
 		commands.NewRuns(),

@@ -9,8 +9,27 @@ import (
 
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/project"
+	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
 	"github.com/spf13/cobra"
 )
+
+func listExistingAssets(assetsDir string) []string {
+	entries, err := os.ReadDir(assetsDir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, ".py") && name != "__init__.py" {
+			out = append(out, strings.TrimSuffix(name, ".py"))
+		}
+	}
+	return out
+}
 
 const assetTemplate = `"""{{TITLE}}."""
 
@@ -66,17 +85,38 @@ func NewNewAsset() *cobra.Command {
 	var withTest bool
 	var dryRun bool
 	cmd := &cobra.Command{
-		Use:   "new-asset <name>",
+		Use:   "new-asset [name]",
 		Short: "Scaffold a new Dagster asset (Polars + Pandera schema + check)",
-		Args:  cobra.ExactArgs(1),
+		Long:  "Scaffold a new asset. With no name, runs interactively; otherwise uses flags.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			if !nameRegex.MatchString(name) {
-				return fmt.Errorf("name must be snake_case (lowercase, digits, underscores), got: %s", name)
-			}
 			info, err := project.Detect(project.Cwd())
 			if err != nil {
 				return err
+			}
+
+			interactive := len(args) == 0
+			var name string
+			if !interactive {
+				name = args[0]
+			} else {
+				fmt.Println(format.Bold("New asset for "), info.Name)
+				name = prompts.Ask("Asset name (snake_case)", "")
+				if name == "" {
+					return fmt.Errorf("asset name required")
+				}
+				existing := listExistingAssets(info.AssetsDir)
+				if len(existing) > 0 {
+					fmt.Println(format.Gray("Existing assets: " + strings.Join(existing, ", ")))
+				}
+				upstream = prompts.Ask("Upstream assets (comma-separated, blank for none)", upstream)
+				group = prompts.Ask("Group", group)
+				title = prompts.Ask("Title", strings.ToUpper(strings.ReplaceAll(name, "_", " ")[:1])+strings.ReplaceAll(name, "_", " ")[1:])
+				withTest = prompts.Confirm("Generate test stub?", withTest)
+			}
+
+			if !nameRegex.MatchString(name) {
+				return fmt.Errorf("name must be snake_case (lowercase, digits, underscores), got: %s", name)
 			}
 
 			if title == "" {
