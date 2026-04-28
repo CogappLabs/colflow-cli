@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Set by goreleaser via -ldflags at build time.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	// Auto-load <project-root>/.env and .env.local if running inside a colflow
 	// project. Existing OS env vars take precedence.
@@ -17,7 +24,7 @@ func main() {
 	root := &cobra.Command{
 		Use:           "colflow",
 		Short:         "Collection-flow CLI — Dagster pipelines, data, and operations",
-		Version:       "0.1.0",
+		Version:       fmt.Sprintf("%s (%s, %s)", version, commit, date),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
