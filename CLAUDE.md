@@ -66,6 +66,10 @@ GoReleaser on `v*` tag → GitHub release with darwin/linux × amd64/arm64 binar
 
 Token: `TAP_GITHUB_TOKEN` repo secret (PAT with `contents:write` on the tap repo).
 
+`--version` reads `main.version`, `main.commit`, `main.date` injected via ldflags. Don't hardcode the version in `cmd/colflow/main.go`.
+
+`brews:` block in `.goreleaser.yaml` is officially deprecated upstream in favour of `homebrew_casks:`. Casks need notarised binaries on macOS, which we don't currently sign — switching is a bigger project. Stay on `brews` until that's tackled.
+
 ## Project status
 
-Private repo (`CogappLabs/colflow-cli`). Distribution via private Homebrew tap (`CogappLabs/homebrew-tap`).
+Public repo (`CogappLabs/colflow-cli`) — release tarballs anonymously downloadable. Distribution via private Homebrew tap (`CogappLabs/homebrew-tap`) — users need SSH access to the tap repo to add it: `brew tap CogappLabs/tap git@github.com:CogappLabs/homebrew-tap.git`.

@@ -4,23 +4,19 @@ CLI for Dagster collection-flow pipelines, parquet inspection, asset scaffolding
 
 ## Install (Homebrew)
 
+The release binaries live on the public `CogappLabs/colflow-cli` repo. The Homebrew tap is private, so cloning it needs SSH access to `CogappLabs/homebrew-tap`.
+
 ```sh
 brew tap CogappLabs/tap git@github.com:CogappLabs/homebrew-tap.git
 brew install colflow
 ```
 
-Update: `brew upgrade colflow`.
+Update later with `brew upgrade colflow`.
 
 ## Install (from source)
 
 ```sh
 go install github.com/CogappLabs/colflow-cli/cmd/colflow@latest
-```
-
-Requires `GOPRIVATE=github.com/CogappLabs` for the private repo:
-
-```sh
-go env -w GOPRIVATE=github.com/CogappLabs
 ```
 
 ## Build locally
@@ -102,8 +98,12 @@ Flags: `--upstream=a,b`, `--group=name`, `--title="..."`, `--test=false`, `--dry
 Tag pushes to `v*` build cross-platform binaries via GoReleaser and update the Homebrew tap.
 
 ```sh
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.2.3
+git push origin v0.2.3
 ```
 
-Repo secret `TAP_GITHUB_TOKEN` (PAT with `contents:write` on `CogappLabs/homebrew-tap`) is required.
+The action builds darwin/linux × amd64/arm64 archives, publishes a GitHub release, and updates the formula in `CogappLabs/homebrew-tap`.
+
+Repo secret `TAP_GITHUB_TOKEN` (PAT with `contents:write` on `CogappLabs/homebrew-tap`) is required for the formula push step.
+
+The `--version` output is wired to ldflags-injected `main.version`, `main.commit`, `main.date`.
