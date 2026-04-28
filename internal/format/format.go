@@ -35,6 +35,54 @@ func ColorStatus(status string) string {
 	}
 }
 
+// FormatTimestamp renders a Dagster timestamp (seconds or ms, as float/int/string)
+// as a human-readable local datetime. Returns "never" for empty/zero input.
+func FormatTimestamp(ts any) string {
+	sec, ok := tsToSeconds(ts)
+	if !ok {
+		return "never"
+	}
+	return time.Unix(sec, 0).Format("2006-01-02 15:04:05")
+}
+
+func tsToSeconds(ts any) (int64, bool) {
+	switch v := ts.(type) {
+	case nil:
+		return 0, false
+	case float64:
+		if v == 0 {
+			return 0, false
+		}
+		f := v
+		if f > 1e12 {
+			f = f / 1000
+		}
+		return int64(f), true
+	case int64:
+		if v == 0 {
+			return 0, false
+		}
+		f := v
+		if f > 1e12 {
+			f = f / 1000
+		}
+		return f, true
+	case string:
+		if v == "" {
+			return 0, false
+		}
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return 0, false
+		}
+		if f > 1e12 {
+			f = f / 1000
+		}
+		return int64(f), true
+	}
+	return 0, false
+}
+
 func TimeAgo(ts any) string {
 	var seconds int64
 

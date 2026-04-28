@@ -50,7 +50,11 @@ func printDagsterSection(parquetPath string) {
 		if len(rid) > 8 {
 			rid = rid[:8]
 		}
-		fmt.Printf("  %-12s %s  %s\n", "Last mat:", format.TimeAgo(m.Timestamp), format.Gray("run "+rid))
+		fmt.Printf("  %-12s %s  %s  %s\n", "Last mat:",
+			format.FormatTimestamp(m.Timestamp),
+			format.Gray("("+format.TimeAgo(m.Timestamp)+")"),
+			format.Gray("run "+rid),
+		)
 	}
 
 	if len(detail.JobNames) > 0 {
@@ -127,7 +131,7 @@ func NewInspect() *cobra.Command {
 			PrintSchemaTree(FlattenSchema(schema))
 
 			fmt.Println()
-			fmt.Println(format.Bold("Null counts:"))
+			fmt.Println(format.Bold("Populated:"))
 			nulls := computeNulls(pf, cols)
 			total := pf.NumRows()
 			maxLeaf := 0
@@ -140,21 +144,21 @@ func NewInspect() *cobra.Command {
 			}
 			for i, path := range cols {
 				k := strings.Join(path, ".")
-				n := nulls[k]
+				populated := total - nulls[k]
 				pct := 0.0
 				if total > 0 {
-					pct = 100.0 * float64(n) / float64(total)
+					pct = 100.0 * float64(populated) / float64(total)
 				}
-				colour := format.Green
-				if pct > 0 {
+				colour := format.Red
+				if pct >= 50 {
 					colour = format.Yellow
 				}
-				if pct > 50 {
-					colour = format.Red
+				if pct == 100 {
+					colour = format.Green
 				}
 				fmt.Printf("  %s  %s  %s\n",
 					format.PadRight(leafLabels[i], maxLeaf),
-					format.PadRight(fmt.Sprintf("%d", n), 12),
+					format.PadRight(fmt.Sprintf("%d", populated), 12),
 					colour(fmt.Sprintf("%.1f%%", pct)),
 				)
 			}
