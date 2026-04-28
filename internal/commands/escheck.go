@@ -24,6 +24,16 @@ type esClusterHealth struct {
 	ActiveShards                int     `json:"active_shards"`
 	UnassignedShards            int     `json:"unassigned_shards"`
 	ActiveShardsPercentAsNumber float64 `json:"active_shards_percent_as_number"`
+	Serverless                  bool    `json:"-"`
+}
+
+type esRoot struct {
+	ClusterName string `json:"cluster_name"`
+	ClusterUUID string `json:"cluster_uuid"`
+	Version     struct {
+		Number     string `json:"number"`
+		Distribution string `json:"distribution"`
+	} `json:"version"`
 }
 
 type esIndex struct {
@@ -220,7 +230,22 @@ func NewESCheck() *cobra.Command {
 			}
 
 			var health esClusterHealth
-			if err := esGet(base+"/_cluster/health", key, insecure, &health); err != nil {
+			err := esGet(base+"/_cluster/health", key, insecure, &health)
+			if err != nil {
+				// Elastic Cloud Serverless returns 410 for /_cluster/health.
+				// Fall back to GET / which exists everywhere.
+				var esErr *ESError
+				if errAs(err, &esErr) && esErr.Status == 410 {
+					var root esRoot
+					if err2 := esGet(base+"/", key, insecure, &root); err2 == nil {
+						health.ClusterName = root.ClusterName
+						health.Status = "serverless"
+						health.Serverless = true
+						err = nil
+					}
+				}
+			}
+			if err != nil {
 				if asJSON {
 					PrintJSON(map[string]any{"ok": false, "url": base, "error": err.Error()})
 					return nil
@@ -277,13 +302,17 @@ func NewESCheck() *cobra.Command {
 			fmt.Println(format.Bold("Elasticsearch:"), base)
 			fmt.Println()
 			fmt.Printf("  %-14s %s\n", "Cluster:", health.ClusterName)
-			fmt.Printf("  %-14s %s\n", "Status:", colourESStatus(health.Status))
-			fmt.Printf("  %-14s %d (data: %d)\n", "Nodes:", health.NumberOfNodes, health.NumberOfDataNodes)
-			fmt.Printf("  %-14s %d active / %d primary\n", "Shards:", health.ActiveShards, health.ActivePrimaryShards)
-			if health.UnassignedShards > 0 {
-				fmt.Printf("  %-14s %s\n", "Unassigned:", format.Red(fmt.Sprintf("%d", health.UnassignedShards)))
+			if health.Serverless {
+				fmt.Printf("  %-14s %s\n", "Status:", format.Green("serverless (reachable)"))
+			} else {
+				fmt.Printf("  %-14s %s\n", "Status:", colourESStatus(health.Status))
+				fmt.Printf("  %-14s %d (data: %d)\n", "Nodes:", health.NumberOfNodes, health.NumberOfDataNodes)
+				fmt.Printf("  %-14s %d active / %d primary\n", "Shards:", health.ActiveShards, health.ActivePrimaryShards)
+				if health.UnassignedShards > 0 {
+					fmt.Printf("  %-14s %s\n", "Unassigned:", format.Red(fmt.Sprintf("%d", health.UnassignedShards)))
+				}
+				fmt.Printf("  %-14s %.1f%%\n", "Active %:", health.ActiveShardsPercentAsNumber)
 			}
-			fmt.Printf("  %-14s %.1f%%\n", "Active %:", health.ActiveShardsPercentAsNumber)
 
 			if indexArg != "" {
 				fmt.Println()
