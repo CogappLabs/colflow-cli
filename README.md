@@ -56,9 +56,167 @@ A bare name like `colflow inspect constituents` resolves to `<root>/output/const
 
 ### Dagster
 
-`status`, `runs`, `run`, `logs`, `assets`, `asset`, `graph`, `jobs`, `launch`, `cancel`, `sensors`, `tail`, `reload`, `errors`, `materialise`, `stale`, `config`, `diff`.
+All commands accept `--json` for machine-readable output, `--url` / `-u` to override the Dagster URL, and `--auth` / `-a` for HTTP basic auth.
 
-All support `--json` for scripting / LLM consumption.
+Commands that take an argument (`--id`, `--key`, `--job`) show an interactive picker if the argument is omitted. Enter `0` to cancel.
+
+#### `colflow status` — quick health check
+
+Single-line pipeline health summary.
+
+```sh
+colflow status
+# Pipeline OK — last run 5m ago (SUCCESS), 16/18 assets materialized
+
+colflow status --json
+```
+
+#### `colflow runs` — list recent runs
+
+```sh
+colflow runs                    # last 10 runs
+colflow runs --limit 20         # last 20 runs
+colflow runs --status FAILURE   # only failed runs
+colflow runs --json
+```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--limit` | `-l` | 10 | Number of runs to show (1-100) |
+| `--status` | `-s` | -- | Filter: SUCCESS, FAILURE, STARTED, QUEUED, etc |
+
+#### `colflow run` — run details + logs
+
+```sh
+colflow run --id <runId>
+colflow run --id <runId> --events 50
+```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--id` | -- | (picker) | Run ID |
+| `--events` | `-e` | 20 | Number of log events to show |
+
+#### `colflow logs` — filtered log view
+
+```sh
+colflow logs --id <runId> --level ERROR
+colflow logs --id <runId> --step parse_artists
+colflow logs --id <runId> --grep "timed out"
+```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--id` | -- | (picker) | Run ID |
+| `--step` | `-s` | -- | Filter by step key |
+| `--level` | `-l` | -- | Filter: DEBUG, INFO, WARNING, ERROR |
+| `--grep` | `-g` | -- | Filter messages by substring |
+
+#### `colflow errors` — Python tracebacks from a failed run
+
+```sh
+colflow errors --id <runId>
+```
+
+Extracts step failure events with stack traces. Far quicker than `colflow logs --level ERROR` when you just need the tracebacks.
+
+#### `colflow tail` — live-follow a running job
+
+Polls for new log events and streams them. Exits when the run completes.
+
+```sh
+colflow tail --id <runId>
+colflow tail --id <runId> --interval 5
+```
+
+#### `colflow launch` — start a job run
+
+```sh
+colflow launch                      # picker if multiple jobs
+colflow launch --job my_pipeline
+```
+
+#### `colflow materialise` — re-run specific assets
+
+Bypasses the job system to materialise a subset of assets via `__ASSET_JOB`.
+
+```sh
+colflow materialise --asset constituents
+colflow materialise --assets "constituents,exhibitions,objects"
+```
+
+#### `colflow cancel` — cancel a run
+
+```sh
+colflow cancel --id <runId>
+```
+
+#### `colflow reload` — reload code location
+
+After editing `defs/`, tell Dagster to pick up changes without restarting `dg dev`.
+
+```sh
+colflow reload
+```
+
+#### `colflow diff` — compare two runs
+
+Shows step-by-step status diff between runs (which steps now fail/missing/succeed).
+
+```sh
+colflow diff --run1 <id-a> --run2 <id-b>
+```
+
+### Assets
+
+#### `colflow assets` — list all assets
+
+```sh
+colflow assets
+colflow assets --json
+```
+
+#### `colflow asset` — detailed single asset
+
+Group, compute kind, dependencies, staleness, recent materialisations, kinds, tags, freshness.
+
+```sh
+colflow asset --key constituents
+```
+
+#### `colflow graph` — asset dependency graph
+
+```sh
+colflow graph
+```
+
+#### `colflow stale` — list stale assets
+
+Filters to assets that need re-materialisation, with stale causes.
+
+```sh
+colflow stale
+```
+
+#### `colflow config` — run config schema for a job
+
+```sh
+colflow config --job famsf_pipeline
+```
+
+### Sensors and jobs
+
+#### `colflow sensors` — sensor status + recent ticks
+
+```sh
+colflow sensors
+```
+
+#### `colflow jobs` — list jobs
+
+```sh
+colflow jobs
+```
 
 ### Data
 
@@ -103,9 +261,112 @@ Templates align with collection-flow Commandments: every asset has a `descriptio
 
 Flags: `--upstream=a,b`, `--group=name`, `--title="..."`, `--test=false`, `--dry-run`.
 
+## colflow vs dg — when to use which
+
+`colflow` and `dg` (Dagster's official CLI) overlap on launching runs but serve different purposes.
+
+| Task | `colflow` | `dg` |
+|------|-----------|------|
+| Start dev server | `colflow start` (wraps `uv run dg dev`) | `dg dev` |
+| Scaffold assets | `colflow new-asset` | `dg scaffold` |
+| Validate definitions | -- | `dg check defs` |
+| Launch a job | `colflow launch --job X` | `dg launch --job X` |
+| Launch specific assets | `colflow materialise --assets X,Y` | `dg launch --assets X,Y` |
+| List recent runs | `colflow runs` | -- |
+| View run logs / filter errors | `colflow logs --level ERROR` | -- |
+| Tracebacks from a failure | `colflow errors --id X` | -- |
+| Live-follow a running job | `colflow tail --id X` | -- |
+| Cancel a run | `colflow cancel --id X` | -- |
+| List assets | `colflow assets` | -- |
+| Asset detail (deps, staleness) | `colflow asset --key X` | -- |
+| Stale assets only | `colflow stale` | -- |
+| Asset dependency graph | `colflow graph` | -- |
+| Compare two runs step-by-step | `colflow diff --run1 X --run2 Y` | -- |
+| Reload code location | `colflow reload` | -- |
+| Sensor health | `colflow sensors` | -- |
+| Inspect a parquet output | `colflow inspect <name>` | -- |
+| Sample / filter parquet rows | `colflow sample <name> --where ...` | -- |
+| Test ES connection | `colflow es-check` | -- |
+| Pipeline health summary | `colflow status` | -- |
+| JSON output for scripting/Claude | `colflow X --json` | -- |
+
+**Use `dg`** for project management: scaffolding (when `colflow new-asset` doesn't fit), validating definitions.
+
+**Use `colflow`** for runtime observability and the day-to-day loop: what's running, why it failed, what's stale, what's in the parquet outputs, and is the search index alive.
+
+## Common debugging workflows
+
+```sh
+# Quick health check
+colflow status
+
+# Find the latest failure and inspect it
+colflow runs --status FAILURE --limit 1
+colflow errors --id <runId>
+
+# Why an asset is stale
+colflow asset --key <name>
+
+# Re-run a single asset and watch
+colflow materialise --asset <name>
+colflow tail --id <runId>
+
+# Cancel a stuck run
+colflow cancel --id <runId>
+
+# After editing defs/, pick up changes without restarting dg dev
+colflow reload
+
+# Inspect what an asset actually wrote
+colflow inspect <name>
+colflow sample <name> -n 5 --where status=published
+
+# Verify the search cluster is healthy
+colflow es-check
+colflow es-check collection_documents
+```
+
 ## LLM-friendly output
 
 `--json` is the supported format for Claude / scripting. Every command emits structured JSON with no ANSI codes.
+
+```sh
+colflow status --json | jq '.latest.status'
+colflow runs --json | jq '.[0].runId'
+colflow assets --json | jq '[.[] | select(.assetMaterializations | length == 0)] | length'
+colflow logs --id <runId> --level ERROR --json | jq '.[].message'
+colflow inspect <name> --json | jq '.dagster.stale_status'
+```
+
+## Colour coding
+
+Run statuses are colour-coded in terminal output:
+
+| Colour | Statuses |
+|--------|----------|
+| Green | SUCCESS |
+| Red | FAILURE |
+| Yellow | STARTED, STARTING |
+| Blue | QUEUED |
+| Gray | CANCELED, CANCELING, NOT_STARTED |
+
+## Dagster GraphQL API usage
+
+The CLI queries the standard Dagster GraphQL API:
+
+| Query/Mutation | Used by | Description |
+|----------------|---------|-------------|
+| `runsOrError` | `runs`, `status` | List runs with optional status filter |
+| `runOrError` | `run`, `logs`, `tail`, `errors`, `diff` | Run details, step stats, event log |
+| `assetNodes` | `assets`, `graph`, `stale`, `inspect` | All assets with materialisations / deps |
+| `assetNodeOrError` | `asset`, `inspect` | Single asset with full metadata |
+| `runConfigSchemaOrError` | `config` | Job config schema |
+| `sensorsOrError` | `sensors` | Sensor state and recent ticks |
+| `repositoryOrError` | `jobs` | List jobs in the repository |
+| `repositoriesOrError` | (internal) | Auto-discover repo name/location |
+| `launchRun` | `launch`, `materialise` | Mutation: start a run |
+| `terminateRun` | `cancel` | Mutation: cancel a running job |
+| `reloadRepositoryLocation` | `reload` | Mutation: reload code location |
 
 ## Releasing
 
