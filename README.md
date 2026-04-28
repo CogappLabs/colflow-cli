@@ -1,6 +1,6 @@
 # colflow-cli
 
-CLI for Dagster collection-flow pipelines, parquet inspection, and asset scaffolding. Go.
+CLI for Dagster collection-flow pipelines, parquet inspection, asset scaffolding, and Elasticsearch checks. Go.
 
 ## Install (Homebrew)
 
@@ -31,9 +31,21 @@ go build -o colflow ./cmd/colflow
 
 ## Configuration
 
+### Dagster
+
 - `DAGSTER_GRAPHQL_URL` (default `http://127.0.0.1:3000/graphql`)
 - `DAGSTER_AUTH` — `user:pass` for HTTP basic auth
 - `--url` / `--auth` per-command flags
+
+### Elasticsearch
+
+- `ELASTICSEARCH_URL` (default `http://localhost:9200`)
+- `ELASTICSEARCH_API_KEY` (optional)
+- `--url` / `--api-key` flags accept `'$VAR'` to read from any env var
+
+### `.env` auto-load
+
+When a command runs inside a colflow project (parent directory has `pyproject.toml`), `<project-root>/.env` and `.env.local` are loaded automatically. Existing OS env vars take precedence. Combined with `'$VAR'` flag syntax: `colflow es-check --url '$ELASTICSEARCH_URL'` works without manually exporting.
 
 ## Project conventions
 
@@ -61,12 +73,23 @@ All support `--json` for scripting / LLM consumption.
 
 No-arg form lists `output/` with tags: `[asset]` (matches Dagster), `[orphan]` (no match).
 
+### Elasticsearch
+
+- `colflow es-check [index]` — verify cluster reachability. Reports cluster name + status (or `serverless (reachable)` for Elastic Cloud Serverless). With an index argument, also reports its health, doc count, and store size.
+  - `--url` / `--api-key` accept plain values or `'$VAR'` to read from env / `.env`.
+  - `--indices` lists all indices via `/_cat/indices`.
+  - `--insecure` skips TLS verification.
+  - `--json` for structured output.
+  - Pretty error output with hints for common failure modes (401/403/404/429/503, DNS, connection-refused, TLS, timeout).
+
 ### Scaffolding
 
 - `colflow new-asset [name]` — generate Dagster asset (Polars `pl.LazyFrame` + Pandera schema + asset_check) and a test stub. With no name, runs interactively:
   - pulls live asset list from Dagster GraphQL (or `defs/assets/` filenames if Dagster is down)
   - numbered or name-based upstream picker (multi-select via comma)
   - default group suggested from most-common existing group
+
+Templates align with collection-flow Commandments: every asset has a `description=`, every schema has `class Config: name = "..."`, and `group=extract` adds `kinds={"http"}` + `retry_policy=api_retry_policy`.
 
 Flags: `--upstream=a,b`, `--group=name`, `--title="..."`, `--test=false`, `--dry-run`.
 
@@ -79,8 +102,8 @@ Flags: `--upstream=a,b`, `--group=name`, `--title="..."`, `--test=false`, `--dry
 Tag pushes to `v*` build cross-platform binaries via GoReleaser and update the Homebrew tap.
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 Repo secret `TAP_GITHUB_TOKEN` (PAT with `contents:write` on `CogappLabs/homebrew-tap`) is required.

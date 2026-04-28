@@ -1,15 +1,15 @@
 # colflow-cli
 
-Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL + reads Parquet outputs.
+Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL, reads Parquet outputs, scaffolds assets, checks Elasticsearch.
 
 ## Architecture
 
-- `cmd/colflow/main.go` — root cobra command, registers all subcommands.
+- `cmd/colflow/main.go` — root cobra command, registers all subcommands. Calls `project.LoadDotEnv` at startup.
 - `internal/client/` — Dagster GraphQL client. `client.go` is transport, `queries.go` per-operation wrappers, `types.go` response shapes. All Dagster API access goes through `Query()`.
 - `internal/format/` — terminal output helpers (colour, `TimeAgo`, `FormatTimestamp`, `PadRight`). `PadRight` is ANSI-aware.
 - `internal/prompts/` — interactive numbered pickers (`Pick`, `SelectRun`, `SelectAsset`, `SelectJob`) and free-text prompts (`Ask`, `Confirm`). Shared `bufio.Reader` so piped stdin flows through successive prompts.
-- `internal/project/` — detect project root via `pyproject.toml`, derive package name + `output/` + `defs/assets/` paths. Resolves bare asset names to `<root>/output/<name>.parquet`.
-- `internal/commands/` — one file per command, each returning a `*cobra.Command`. `common.go` has `CommonFlags` (`--url`, `--auth`, `--json`) and `PrintJSON` helper. `treeprint.go` builds the Parquet schema tree (collapses list/map wrappers).
+- `internal/project/` — detect project root via `pyproject.toml`, derive package name + `output/` + `defs/assets/` paths. `LoadDotEnv` calls godotenv on `<root>/.env` and `.env.local`. Resolves bare asset names to `<root>/output/<name>.parquet`.
+- `internal/commands/` — one file per command, each returning a `*cobra.Command`. `common.go` has `CommonFlags` (`--url`, `--auth`, `--json`) and `PrintJSON` helper. `treeprint.go` builds the Parquet schema tree (collapses list/map wrappers). `escheck.go` is the Elasticsearch helper. `templates/` holds embedded `.tmpl` files used by `new-asset` (text/template).
 
 ## Conventions
 
@@ -19,7 +19,9 @@ Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL + reads Parq
 - Bare-name resolution for parquet args: literal path → `<root>/output/<arg>` → `<root>/output/<arg>.parquet`.
 - Picker tags use `format.Green("[asset]")` etc. Dagster lookup is best-effort; commands degrade gracefully when Dagster is down.
 - `printDagsterSection` in `inspect.go` is silent on Dagster failure or missing asset — by design.
-- All asset templates live as Go string consts in `newasset.go`. Imports include `from collection_flow.support.polars.validation import validate_dataframe` — that helper is required.
+- `'$VAR'` syntax in es-check flags reads from process env (which includes loaded `.env`). Implemented in `resolveEnvRef`.
+- Pretty errors over raw payloads. `ESError` parses JSON; `printESError` adds context-specific hints.
+- **Never** scaffold `automation_condition=when_all_deps_updated` in new-asset templates. Deliberate per-asset choice, not a default.
 
 ## Adding a new command
 
@@ -43,6 +45,20 @@ Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL + reads Parq
 - `FlattenSchema` walks the schema tree and collapses Parquet list/map encodings (`foo.list.element.bar` → list[group] with `bar` indented; `foo.key_value.{key,value}` → `map[k -> v]`).
 - `collapseLeafPath` produces matching labels for null-count rows (`foo[].bar`, `foo{}.bar`).
 - `computeNulls` reads each column chunk's pages and sums `NumNulls()`. Avoid for huge files — paginated read is full-scan.
+- `sample --where field=value` reads in 64-row batches until N matches collected or `--max-scan` hit.
+
+## Elasticsearch handling
+
+- `esGet` parses error JSON into `ESError{Status, Type, Reason}`. Cobra error reprint suppressed via `os.Exit(1)` after rendering.
+- Hints in `hintForESError` cover 401/403/404/429/503 + DNS/refused/TLS/timeout transport errors.
+- Elastic Cloud Serverless returns 410 on `/_cluster/health`. Fallback to `GET /` which exists everywhere.
+- Index check via `/_cat/indices/<name>?format=json&bytes=b`.
+
+## Templating (new-asset)
+
+- `internal/commands/templates/asset.py.tmpl` and `test.py.tmpl` are loaded via `//go:embed`.
+- Use Go `text/template` syntax (`{{.Name}}`, `{{if .IsExtract}}…{{end}}`, `{{range .Upstream}}…{{end}}`).
+- `assetData` struct fields drive everything — extend the struct + the template, not strings.ReplaceAll.
 
 ## Release
 
