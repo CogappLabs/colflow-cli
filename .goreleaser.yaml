@@ -45,27 +45,21 @@ changelog:
       - "Merge pull request"
       - "Merge branch"
 
-homebrew_casks:
+brews:
   - name: colflow
     repository:
       owner: CogappLabs
       name: homebrew-tap
       branch: main
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    directory: Casks
+    directory: Formula
     homepage: "https://github.com/CogappLabs/colflow-cli"
     description: "CLI for Dagster collection-flow pipelines: runs, assets, parquet inspection, asset scaffolding"
-    binary: colflow
-    # Unsigned binary — strip macOS quarantine attribute on install so users
-    # don't get the "cannot be opened because the developer cannot be verified" error.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr",
-                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/colflow"],
-                           sudo: false
-          end
+    license: "MIT"
+    install: |
+      bin.install "colflow"
+    test: |
+      system "#{bin}/colflow", "--version"
 
 release:
   github:
