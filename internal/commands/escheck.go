@@ -61,6 +61,21 @@ func esClient(insecure bool) *http.Client {
 	return &http.Client{Transport: tr, Timeout: 15 * time.Second}
 }
 
+// ESError carries a parsed ES error payload with structured fields for friendlier formatting.
+type ESError struct {
+	Status int
+	Type   string
+	Reason string
+	Raw    string
+}
+
+func (e *ESError) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("%d %s: %s", e.Status, e.Type, e.Reason)
+	}
+	return fmt.Sprintf("%d %s", e.Status, e.Raw)
+}
+
 func esGet(url, apiKey string, insecure bool, out any) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -77,12 +92,94 @@ func esGet(url, apiKey string, insecure bool, out any) error {
 	defer res.Body.Close()
 	body, _ := io.ReadAll(res.Body)
 	if res.StatusCode >= 400 {
-		return fmt.Errorf("ES %d %s: %s", res.StatusCode, res.Status, string(body))
+		var parsed struct {
+			Error struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(body, &parsed)
+		return &ESError{
+			Status: res.StatusCode,
+			Type:   parsed.Error.Type,
+			Reason: parsed.Error.Reason,
+			Raw:    string(body),
+		}
 	}
 	if out == nil {
 		return nil
 	}
 	return json.Unmarshal(body, out)
+}
+
+func printESError(url, apiKey string, err error) {
+	fmt.Println(format.Red("✗ Elasticsearch:"), url)
+	var esErr *ESError
+	if errAs(err, &esErr) {
+		fmt.Printf("  %-10s %d\n", "Status:", esErr.Status)
+		if esErr.Type != "" {
+			fmt.Printf("  %-10s %s\n", "Type:", esErr.Type)
+		}
+		if esErr.Reason != "" {
+			fmt.Printf("  %-10s %s\n", "Reason:", esErr.Reason)
+		}
+		if hint := hintForESError(esErr, apiKey); hint != "" {
+			fmt.Println()
+			fmt.Println(format.Yellow("Hint:"), hint)
+		}
+		return
+	}
+	// Network/transport error (DNS, refused, timeout, TLS).
+	msg := err.Error()
+	fmt.Println("  ", msg)
+	fmt.Println()
+	switch {
+	case strings.Contains(msg, "no such host"):
+		fmt.Println(format.Yellow("Hint:"), "DNS resolution failed. Check the URL spelling.")
+	case strings.Contains(msg, "connection refused"):
+		fmt.Println(format.Yellow("Hint:"), "Cluster unreachable. Is ES running on this address? For local: 'task services:start'.")
+	case strings.Contains(msg, "x509") || strings.Contains(msg, "certificate"):
+		fmt.Println(format.Yellow("Hint:"), "TLS verification failed. For self-signed certs, retry with --insecure.")
+	case strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline"):
+		fmt.Println(format.Yellow("Hint:"), "Request timed out. Cluster may be slow or unreachable.")
+	}
+}
+
+func hintForESError(esErr *ESError, apiKey string) string {
+	switch esErr.Status {
+	case 401:
+		if apiKey == "" {
+			return "no API key set. Pass --api-key or set ELASTICSEARCH_API_KEY."
+		}
+		return "API key was rejected. Verify it's valid for this cluster."
+	case 403:
+		return "Authenticated, but lacks permissions. Check the API key's privileges."
+	case 404:
+		if strings.Contains(esErr.Reason, "no such index") {
+			return "Index doesn't exist. List with 'colflow es-check --indices'."
+		}
+		return "Endpoint not found. Confirm the URL points at an Elasticsearch cluster (not Kibana)."
+	case 429:
+		return "Rate limited. Slow down requests or contact cluster admin."
+	case 503:
+		return "Cluster unavailable. Try again shortly; check 'colflow es-check' once it recovers."
+	}
+	return ""
+}
+
+// errAs is a tiny wrapper around errors.As to keep call sites short.
+func errAs(err error, target any) bool {
+	if err == nil {
+		return false
+	}
+	switch t := target.(type) {
+	case **ESError:
+		if e, ok := err.(*ESError); ok {
+			*t = e
+			return true
+		}
+	}
+	return false
 }
 
 func colourESStatus(status string) string {
@@ -119,8 +216,9 @@ func NewESCheck() *cobra.Command {
 					PrintJSON(map[string]any{"ok": false, "url": base, "error": err.Error()})
 					return nil
 				}
-				fmt.Println(format.Red("ES connection failed:"), err)
-				return err
+				printESError(base, key, err)
+				os.Exit(1)
+				return nil
 			}
 
 			var indices []esIndex
