@@ -86,9 +86,10 @@ func printDagsterSection(parquetPath string) {
 }
 
 func NewInspect() *cobra.Command {
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "inspect [file.parquet | asset_name]",
-		Short: "Inspect a parquet file: schema, row count, null %, file size",
+		Short: "Inspect a parquet file: schema, row count, populated %, Dagster info",
 		Long:  "Inspect a parquet file. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -116,6 +117,10 @@ func NewInspect() *cobra.Command {
 			pf, err := parquet.OpenFile(f, fi.Size())
 			if err != nil {
 				return fmt.Errorf("open parquet: %w", err)
+			}
+
+			if asJSON {
+				return inspectJSON(path, fi.Size(), pf)
 			}
 
 			fmt.Println(format.Bold(path))
@@ -167,7 +172,85 @@ func NewInspect() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON (LLM-friendly)")
 	return cmd
+}
+
+func inspectJSON(path string, size int64, pf *parquet.File) error {
+	schema := pf.Schema()
+	cols := schema.Columns()
+	nulls := computeNulls(pf, cols)
+	total := pf.NumRows()
+
+	type colInfo struct {
+		Name      string  `json:"name"`
+		NullCount int64   `json:"null_count"`
+		Populated int64   `json:"populated"`
+		PopulatedPct float64 `json:"populated_pct"`
+	}
+	colsOut := make([]colInfo, len(cols))
+	for i, p := range cols {
+		k := strings.Join(p, ".")
+		populated := total - nulls[k]
+		pct := 0.0
+		if total > 0 {
+			pct = 100.0 * float64(populated) / float64(total)
+		}
+		colsOut[i] = colInfo{
+			Name:         collapseLeafPath(p),
+			NullCount:    nulls[k],
+			Populated:    populated,
+			PopulatedPct: pct,
+		}
+	}
+
+	out := map[string]any{
+		"path":       path,
+		"size_bytes": size,
+		"rows":       total,
+		"row_groups": len(pf.RowGroups()),
+		"schema":     FlattenSchema(schema),
+		"columns":    colsOut,
+	}
+
+	base := strings.TrimSuffix(filepath.Base(path), ".parquet")
+	if detail, err := client.GetAssetDetail([]string{base}); err == nil {
+		out["dagster"] = dagsterSummary(detail)
+	}
+
+	PrintJSON(out)
+	return nil
+}
+
+func dagsterSummary(d *client.AssetDetail) map[string]any {
+	deps := make([]string, len(d.DependencyKeys))
+	for i, k := range d.DependencyKeys {
+		deps[i] = strings.Join(k.Path, "/")
+	}
+	dl := make([]string, len(d.DependedByKeys))
+	for i, k := range d.DependedByKeys {
+		dl[i] = strings.Join(k.Path, "/")
+	}
+	res := map[string]any{
+		"asset":         strings.Join(d.AssetKey.Path, "/"),
+		"group":         d.GroupName,
+		"compute_kind":  d.ComputeKind,
+		"kinds":         d.Kinds,
+		"stale_status":  d.StaleStatus,
+		"stale_causes":  d.StaleCauses,
+		"jobs":          d.JobNames,
+		"upstream":      deps,
+		"downstream":    dl,
+	}
+	if len(d.Materializations) > 0 {
+		m := d.Materializations[0]
+		res["last_materialization"] = map[string]any{
+			"timestamp": m.Timestamp,
+			"datetime":  format.FormatTimestamp(m.Timestamp),
+			"run_id":    m.RunID,
+		}
+	}
+	return res
 }
 
 // collapseLeafPath strips Parquet list/map wrapper segments from a column path
