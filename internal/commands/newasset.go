@@ -5,13 +5,103 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/project"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
 	"github.com/spf13/cobra"
 )
+
+type knownAsset struct {
+	Name  string
+	Group string
+}
+
+// fetchKnownAssets queries Dagster live; on failure, falls back to filenames in defs/assets.
+func fetchKnownAssets(assetsDir string) (assets []knownAsset, fromDagster bool) {
+	graph, err := client.GetAssetGraph()
+	if err == nil && len(graph) > 0 {
+		out := make([]knownAsset, 0, len(graph))
+		for _, n := range graph {
+			name := strings.Join(n.AssetKey.Path, "/")
+			group := ""
+			if n.GroupName != nil {
+				group = *n.GroupName
+			}
+			out = append(out, knownAsset{Name: name, Group: group})
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Group != out[j].Group {
+				return out[i].Group < out[j].Group
+			}
+			return out[i].Name < out[j].Name
+		})
+		return out, true
+	}
+	// Fallback
+	names := listExistingAssets(assetsDir)
+	out := make([]knownAsset, len(names))
+	for i, n := range names {
+		out[i] = knownAsset{Name: n}
+	}
+	return out, false
+}
+
+func mostCommonGroup(assets []knownAsset) string {
+	counts := map[string]int{}
+	best := ""
+	bestN := 0
+	for _, a := range assets {
+		if a.Group == "" {
+			continue
+		}
+		counts[a.Group]++
+		if counts[a.Group] > bestN {
+			bestN = counts[a.Group]
+			best = a.Group
+		}
+	}
+	if best == "" {
+		return "transform"
+	}
+	return best
+}
+
+// pickUpstream returns selected asset names. Input "1,3,5" or comma-separated names.
+func pickUpstream(assets []knownAsset) []string {
+	if len(assets) == 0 {
+		return strings.FieldsFunc(prompts.Ask("Upstream assets (comma-separated names, blank for none)", ""), func(r rune) bool { return r == ',' })
+	}
+	fmt.Println(format.Gray("Existing assets:"))
+	for i, a := range assets {
+		grp := ""
+		if a.Group != "" {
+			grp = format.Gray(" (" + a.Group + ")")
+		}
+		fmt.Printf("  %d) %s%s\n", i+1, a.Name, grp)
+	}
+	raw := prompts.Ask("Upstream (numbers or names, comma-separated, blank for none)", "")
+	if raw == "" {
+		return nil
+	}
+	picks := []string{}
+	for _, p := range strings.Split(raw, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if idx, err := strconv.Atoi(p); err == nil && idx >= 1 && idx <= len(assets) {
+			picks = append(picks, assets[idx-1].Name)
+			continue
+		}
+		picks = append(picks, p)
+	}
+	return picks
+}
 
 func listExistingAssets(assetsDir string) []string {
 	entries, err := os.ReadDir(assetsDir)
@@ -100,18 +190,33 @@ func NewNewAsset() *cobra.Command {
 			if !interactive {
 				name = args[0]
 			} else {
-				fmt.Println(format.Bold("New asset for "), info.Name)
+				fmt.Printf("%s %s\n\n", format.Bold("New asset for"), info.Name)
 				name = prompts.Ask("Asset name (snake_case)", "")
 				if name == "" {
 					return fmt.Errorf("asset name required")
 				}
-				existing := listExistingAssets(info.AssetsDir)
-				if len(existing) > 0 {
-					fmt.Println(format.Gray("Existing assets: " + strings.Join(existing, ", ")))
+
+				known, fromDagster := fetchKnownAssets(info.AssetsDir)
+				if fromDagster {
+					fmt.Println(format.Gray("(asset list from running Dagster)"))
+				} else if len(known) > 0 {
+					fmt.Println(format.Gray("(asset list from defs/assets/ — Dagster not reachable)"))
 				}
-				upstream = prompts.Ask("Upstream assets (comma-separated, blank for none)", upstream)
-				group = prompts.Ask("Group", group)
-				title = prompts.Ask("Title", strings.ToUpper(strings.ReplaceAll(name, "_", " ")[:1])+strings.ReplaceAll(name, "_", " ")[1:])
+
+				picks := pickUpstream(known)
+				upstream = strings.Join(picks, ",")
+
+				defaultGroup := group
+				if defaultGroup == "transform" {
+					defaultGroup = mostCommonGroup(known)
+				}
+				group = prompts.Ask("Group", defaultGroup)
+
+				defaultTitle := strings.ReplaceAll(name, "_", " ")
+				if len(defaultTitle) > 0 {
+					defaultTitle = strings.ToUpper(defaultTitle[:1]) + defaultTitle[1:]
+				}
+				title = prompts.Ask("Title", defaultTitle)
 				withTest = prompts.Confirm("Generate test stub?", withTest)
 			}
 

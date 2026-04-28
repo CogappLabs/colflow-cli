@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+// stdinReader is shared so successive prompts share the same buffer; otherwise
+// piped input gets dropped between bufio readers.
+var stdinReader = bufio.NewReader(os.Stdin)
+
+func readLine() (string, error) {
+	return stdinReader.ReadString('\n')
+}
+
 // Ask reads a line from stdin with a prompt. Returns trimmed input or default if empty.
 func Ask(label, def string) string {
 	if def != "" {
@@ -14,8 +22,7 @@ func Ask(label, def string) string {
 	} else {
 		fmt.Printf("%s: ", label)
 	}
-	r := bufio.NewReader(os.Stdin)
-	line, err := r.ReadString('\n')
+	line, err := readLine()
 	if err != nil {
 		return def
 	}
@@ -33,8 +40,7 @@ func Confirm(label string, def bool) bool {
 		suffix = "[Y/n]"
 	}
 	fmt.Printf("%s %s: ", label, suffix)
-	r := bufio.NewReader(os.Stdin)
-	line, err := r.ReadString('\n')
+	line, err := readLine()
 	if err != nil {
 		return def
 	}

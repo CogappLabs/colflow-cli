@@ -1,7 +1,6 @@
 package prompts
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strconv"
@@ -29,8 +28,7 @@ func Pick[T any](label string, items []Item[T]) (T, bool) {
 	}
 
 	fmt.Print("\nEnter number: ")
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
+	line, err := readLine()
 	if err != nil {
 		return zero, false
 	}

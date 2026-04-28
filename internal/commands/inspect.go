@@ -6,12 +6,80 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
 	"github.com/lukew-cogapp/colflow-cli/internal/project"
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
 	"github.com/parquet-go/parquet-go"
 	"github.com/spf13/cobra"
 )
+
+// printDagsterSection looks up parquet basename as a Dagster asset and prints
+// metadata if found. Silent on failure.
+func printDagsterSection(parquetPath string) {
+	base := strings.TrimSuffix(filepath.Base(parquetPath), ".parquet")
+	detail, err := client.GetAssetDetail([]string{base})
+	if err != nil {
+		return
+	}
+	fmt.Println()
+	fmt.Println(format.Bold("Dagster:"))
+
+	group := "—"
+	if detail.GroupName != nil && *detail.GroupName != "" {
+		group = *detail.GroupName
+	}
+	fmt.Printf("  %-12s %s\n", "Asset:", format.Cyan(strings.Join(detail.AssetKey.Path, "/")))
+	fmt.Printf("  %-12s %s\n", "Group:", group)
+	if detail.ComputeKind != nil && *detail.ComputeKind != "" {
+		fmt.Printf("  %-12s %s\n", "Compute:", *detail.ComputeKind)
+	}
+	if len(detail.Kinds) > 0 {
+		fmt.Printf("  %-12s %s\n", "Kinds:", strings.Join(detail.Kinds, ", "))
+	}
+
+	staleColoured := format.ColorStatus("FAILURE")
+	if detail.StaleStatus == "FRESH" {
+		staleColoured = format.ColorStatus("SUCCESS")
+	}
+	fmt.Printf("  %-12s %s (%s)\n", "Stale:", staleColoured, detail.StaleStatus)
+
+	if len(detail.Materializations) > 0 {
+		m := detail.Materializations[0]
+		rid := m.RunID
+		if len(rid) > 8 {
+			rid = rid[:8]
+		}
+		fmt.Printf("  %-12s %s  %s\n", "Last mat:", format.TimeAgo(m.Timestamp), format.Gray("run "+rid))
+	}
+
+	if len(detail.JobNames) > 0 {
+		fmt.Printf("  %-12s %s\n", "Jobs:", strings.Join(detail.JobNames, ", "))
+	}
+
+	if len(detail.DependencyKeys) > 0 {
+		deps := make([]string, len(detail.DependencyKeys))
+		for i, d := range detail.DependencyKeys {
+			deps[i] = strings.Join(d.Path, "/")
+		}
+		fmt.Printf("  %-12s %s\n", "Upstream:", format.Gray(strings.Join(deps, ", ")))
+	}
+	if len(detail.DependedByKeys) > 0 {
+		dl := make([]string, len(detail.DependedByKeys))
+		for i, d := range detail.DependedByKeys {
+			dl[i] = strings.Join(d.Path, "/")
+		}
+		fmt.Printf("  %-12s %s\n", "Downstream:", format.Cyan(strings.Join(dl, ", ")))
+	}
+
+	if len(detail.StaleCauses) > 0 {
+		fmt.Println()
+		fmt.Println(format.Bold("  Stale causes:"))
+		for _, c := range detail.StaleCauses {
+			fmt.Printf("    %s: %s (%s)\n", format.Yellow(c.Category), c.Reason, strings.Join(c.Key.Path, "/"))
+		}
+	}
+}
 
 func NewInspect() *cobra.Command {
 	cmd := &cobra.Command{
@@ -90,6 +158,8 @@ func NewInspect() *cobra.Command {
 					colour(fmt.Sprintf("%.1f%%", pct)),
 				)
 			}
+
+			printDagsterSection(path)
 			return nil
 		},
 	}
