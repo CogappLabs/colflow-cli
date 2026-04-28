@@ -56,55 +56,21 @@ func NewInspect() *cobra.Command {
 			schema := pf.Schema()
 			cols := schema.Columns()
 			fmt.Println(format.Bold("Schema:"))
-
-			leafTypes := map[string]string{}
-			leafOptional := map[string]bool{}
-			for _, path := range cols {
-				var node parquet.Node = schema
-				optional := false
-				for _, p := range path {
-					next, ok := nodeChild(node, p)
-					if !ok {
-						break
-					}
-					if next.Optional() {
-						optional = true
-					}
-					node = next
-				}
-				key := strings.Join(path, ".")
-				leafTypes[key] = nodeTypeName(node)
-				leafOptional[key] = optional
-			}
-
-			maxName := 0
-			for _, path := range cols {
-				k := strings.Join(path, ".")
-				if len(k) > maxName {
-					maxName = len(k)
-				}
-			}
-
-			for _, path := range cols {
-				k := strings.Join(path, ".")
-				nullable := "required"
-				if leafOptional[k] {
-					nullable = format.Gray("optional")
-				} else {
-					nullable = format.Yellow(nullable)
-				}
-				fmt.Printf("  %s  %s  %s\n",
-					format.PadRight(k, maxName),
-					format.PadRight(format.Gray(leafTypes[k]), 24),
-					nullable,
-				)
-			}
+			PrintSchemaTree(FlattenSchema(schema))
 
 			fmt.Println()
 			fmt.Println(format.Bold("Null counts:"))
 			nulls := computeNulls(pf, cols)
 			total := pf.NumRows()
-			for _, path := range cols {
+			maxLeaf := 0
+			leafLabels := make([]string, len(cols))
+			for i, path := range cols {
+				leafLabels[i] = collapseLeafPath(path)
+				if len(leafLabels[i]) > maxLeaf {
+					maxLeaf = len(leafLabels[i])
+				}
+			}
+			for i, path := range cols {
 				k := strings.Join(path, ".")
 				n := nulls[k]
 				pct := 0.0
@@ -119,7 +85,7 @@ func NewInspect() *cobra.Command {
 					colour = format.Red
 				}
 				fmt.Printf("  %s  %s  %s\n",
-					format.PadRight(k, maxName),
+					format.PadRight(leafLabels[i], maxLeaf),
 					format.PadRight(fmt.Sprintf("%d", n), 12),
 					colour(fmt.Sprintf("%.1f%%", pct)),
 				)
@@ -128,6 +94,41 @@ func NewInspect() *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+// collapseLeafPath strips Parquet list/map wrapper segments from a column path
+// so null-count labels match the schema tree. e.g. constituents.list.element.Role -> constituents[].Role.
+func collapseLeafPath(path []string) string {
+	out := make([]string, 0, len(path))
+	i := 0
+	for i < len(path) {
+		seg := path[i]
+		lower := strings.ToLower(seg)
+		if i+1 < len(path) {
+			nextLower := strings.ToLower(path[i+1])
+			if (nextLower == "list" || nextLower == "array") && i+2 < len(path) {
+				elemLower := strings.ToLower(path[i+2])
+				if elemLower == "element" || elemLower == "item" {
+					out = append(out, seg+"[]")
+					i += 3
+					continue
+				}
+			}
+			if nextLower == "key_value" || nextLower == "map" {
+				out = append(out, seg+"{}")
+				i += 2
+				if i < len(path) {
+					out = append(out, path[i])
+					i++
+				}
+				continue
+			}
+		}
+		_ = lower
+		out = append(out, seg)
+		i++
+	}
+	return strings.Join(out, ".")
 }
 
 func resolveOrPick(args []string) (string, error) {
