@@ -2,6 +2,7 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,7 @@ type Info struct {
 	PackageName string // python package name (underscored)
 	SrcDir      string // <root>/src/<package>
 	AssetsDir   string // <root>/src/<package>/defs/assets
+	OutputDir   string // <root>/output
 }
 
 var nameRe = regexp.MustCompile(`(?m)^name\s*=\s*"([^"]+)"`)
@@ -54,7 +56,55 @@ func parse(pyPath, root string) (*Info, error) {
 		PackageName: pkg,
 		SrcDir:      srcDir,
 		AssetsDir:   filepath.Join(srcDir, "defs", "assets"),
+		OutputDir:   filepath.Join(root, "output"),
 	}, nil
+}
+
+// ResolveParquet finds a parquet file. If arg is empty, returns "" (caller should
+// list output/). Tries: arg as-is, <output>/arg, <output>/arg.parquet.
+func ResolveParquet(arg string) (string, error) {
+	if arg == "" {
+		return "", errors.New("no file specified")
+	}
+	if _, err := os.Stat(arg); err == nil {
+		return arg, nil
+	}
+	info, err := Detect(Cwd())
+	if err != nil {
+		return "", fmt.Errorf("file not found and no project root: %s", arg)
+	}
+	candidates := []string{
+		filepath.Join(info.OutputDir, arg),
+		filepath.Join(info.OutputDir, arg+".parquet"),
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("file not found: tried %s, %s", arg, strings.Join(candidates, ", "))
+}
+
+// ListParquets returns parquet files in <root>/output, sorted.
+func ListParquets() ([]string, error) {
+	info, err := Detect(Cwd())
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(info.OutputDir)
+	if err != nil {
+		return nil, fmt.Errorf("output dir not found: %s", info.OutputDir)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(strings.ToLower(e.Name()), ".parquet") {
+			out = append(out, filepath.Join(info.OutputDir, e.Name()))
+		}
+	}
+	return out, nil
 }
 
 func Cwd() string {

@@ -17,11 +17,18 @@ func NewSample() *cobra.Command {
 	var n int
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "sample <file.parquet>",
+		Use:   "sample [file.parquet | asset_name]",
 		Short: "Pretty-print N rows from a parquet file",
-		Args:  cobra.ExactArgs(1),
+		Long:  "Pretty-print rows. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := args[0]
+			path, err := resolveOrPick(args)
+			if err != nil {
+				return err
+			}
+			if path == "" {
+				return nil
+			}
 			fi, err := os.Stat(path)
 			if err != nil {
 				return fmt.Errorf("file not found: %s", path)

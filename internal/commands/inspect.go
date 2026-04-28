@@ -3,20 +3,30 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
+	"github.com/lukew-cogapp/colflow-cli/internal/project"
+	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
 	"github.com/parquet-go/parquet-go"
 	"github.com/spf13/cobra"
 )
 
 func NewInspect() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "inspect <file.parquet>",
+		Use:   "inspect [file.parquet | asset_name]",
 		Short: "Inspect a parquet file: schema, row count, null %, file size",
-		Args:  cobra.ExactArgs(1),
+		Long:  "Inspect a parquet file. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := args[0]
+			path, err := resolveOrPick(args)
+			if err != nil {
+				return err
+			}
+			if path == "" {
+				return nil
+			}
 			fi, err := os.Stat(path)
 			if err != nil {
 				return fmt.Errorf("file not found: %s", path)
@@ -118,6 +128,28 @@ func NewInspect() *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+func resolveOrPick(args []string) (string, error) {
+	if len(args) == 1 {
+		return project.ResolveParquet(args[0])
+	}
+	files, err := project.ListParquets()
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("no parquet files in output/")
+	}
+	items := make([]prompts.Item[string], len(files))
+	for i, f := range files {
+		items[i] = prompts.Item[string]{Display: filepath.Base(f), Value: f}
+	}
+	picked, ok := prompts.Pick("Parquet files in output/", items)
+	if !ok {
+		return "", nil
+	}
+	return picked, nil
 }
 
 func nodeChild(n parquet.Node, name string) (parquet.Node, bool) {
