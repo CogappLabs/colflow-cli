@@ -1,0 +1,69 @@
+version: 2
+
+project_name: colflow
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: colflow
+    main: ./cmd/colflow
+    binary: colflow
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: colflow
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+brews:
+  - name: colflow
+    repository:
+      owner: CogappLabs
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/CogappLabs/colflow-cli"
+    description: "CLI for Dagster collection-flow pipelines: runs, assets, parquet inspection, asset scaffolding"
+    license: "MIT"
+    install: |
+      bin.install "colflow"
+    test: |
+      system "#{bin}/colflow", "--version"
+
+release:
+  github:
+    owner: CogappLabs
+    name: colflow-cli
+  draft: false
+  prerelease: auto
