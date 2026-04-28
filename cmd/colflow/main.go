@@ -27,6 +27,8 @@ func main() {
 		commands.NewSample(),
 		commands.NewNewAsset(),
 		commands.NewESCheck(),
+		commands.NewStart(),
+		commands.NewDebug(),
 		commands.NewStatus(),
 		commands.NewRuns(),
 		commands.NewRun(),
