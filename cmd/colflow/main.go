@@ -21,6 +21,7 @@ func main() {
 		commands.NewInspect(),
 		commands.NewSample(),
 		commands.NewNewAsset(),
+		commands.NewESCheck(),
 		commands.NewStatus(),
 		commands.NewRuns(),
 		commands.NewRun(),
