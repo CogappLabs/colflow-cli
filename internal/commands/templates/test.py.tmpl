@@ -1,0 +1,9 @@
+import polars as pl
+
+from {{.Package}}.defs.assets.{{.Name}} import {{.Name}}
+
+
+def test_{{.Name}}_produces_lazyframe() -> None:
+    """{{.Name}} returns a Polars LazyFrame."""
+    # TODO: build inputs that match upstream schema
+    raise NotImplementedError("Implement test for {{.Name}}")

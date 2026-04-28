@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/lukew-cogapp/colflow-cli/internal/client"
 	"github.com/lukew-cogapp/colflow-cli/internal/format"
@@ -15,6 +18,38 @@ import (
 	"github.com/lukew-cogapp/colflow-cli/internal/prompts"
 	"github.com/spf13/cobra"
 )
+
+//go:embed templates/asset.py.tmpl
+var assetTmplSrc string
+
+//go:embed templates/test.py.tmpl
+var testTmplSrc string
+
+var assetTmpl = template.Must(template.New("asset").Parse(assetTmplSrc))
+var testTmpl = template.Must(template.New("test").Parse(testTmplSrc))
+
+type assetData struct {
+	Name      string
+	Class     string
+	Title     string
+	Group     string
+	Kinds     []string
+	Upstream  []string
+	IsExtract bool
+}
+
+type testData struct {
+	Name    string
+	Package string
+}
+
+func renderTemplate(t *template.Template, data any) string {
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return ""
+	}
+	return buf.String()
+}
 
 type knownAsset struct {
 	Name  string
@@ -121,41 +156,6 @@ func listExistingAssets(assetsDir string) []string {
 	return out
 }
 
-const assetTemplate = `"""{{TITLE}}."""
-
-import dagster as dg
-{{IMPORTS}}
-
-
-@dg.asset(group_name="{{GROUP}}", kinds={"polars"})
-def {{NAME}}({{ARGS}}) -> pl.LazyFrame:
-    """{{TITLE}}."""
-    raise NotImplementedError("Implement {{NAME}}")
-
-
-class {{CLASS}}Schema(pa.DataFrameModel):
-    """Schema for {{NAME}}."""
-
-
-@dg.asset_check(asset="{{NAME}}", name="schema", blocking=True)
-def {{NAME}}_schema_check(df: pl.LazyFrame) -> dg.AssetCheckResult:
-    """Check {{NAME}} matches its schema."""
-    return validate_dataframe(df, {{CLASS}}Schema).to_asset_check_result(
-        asset_key="{{NAME}}",
-        check_name="schema",
-    )
-`
-
-const testTemplate = `import polars as pl
-
-from {{PKG}}.defs.assets.{{NAME}} import {{NAME}}
-
-
-def test_{{NAME}}_produces_lazyframe() -> None:
-    """{{NAME}} returns a Polars LazyFrame."""
-    # TODO: build inputs that match upstream schema
-    raise NotImplementedError("Implement test for {{NAME}}")
-`
 
 var nameRegex = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
@@ -229,29 +229,31 @@ func NewNewAsset() *cobra.Command {
 				title = strings.ToUpper(title[:1]) + title[1:]
 			}
 
-			args2 := []string{}
-			imports := []string{
-				"import pandera.polars as pa",
-				"import polars as pl",
-				"from collection_flow.support.polars.validation import validate_dataframe",
-			}
+			isExtract := group == "extract"
+			upstreams := []string{}
 			if upstream != "" {
 				for _, dep := range strings.Split(upstream, ",") {
 					dep = strings.TrimSpace(dep)
-					if dep == "" {
-						continue
+					if dep != "" {
+						upstreams = append(upstreams, dep)
 					}
-					args2 = append(args2, fmt.Sprintf("%s: pl.LazyFrame", dep))
 				}
 			}
+			kinds := []string{"polars"}
+			if isExtract {
+				kinds = []string{"http"}
+			}
 
-			body := assetTemplate
-			body = strings.ReplaceAll(body, "{{TITLE}}", title)
-			body = strings.ReplaceAll(body, "{{IMPORTS}}", strings.Join(imports, "\n"))
-			body = strings.ReplaceAll(body, "{{GROUP}}", group)
-			body = strings.ReplaceAll(body, "{{NAME}}", name)
-			body = strings.ReplaceAll(body, "{{ARGS}}", strings.Join(args2, ", "))
-			body = strings.ReplaceAll(body, "{{CLASS}}", toClassName(name))
+			data := assetData{
+				Name:      name,
+				Class:     toClassName(name),
+				Title:     title,
+				Group:     group,
+				Kinds:     kinds,
+				Upstream:  upstreams,
+				IsExtract: isExtract,
+			}
+			body := renderTemplate(assetTmpl, data)
 
 			assetPath := filepath.Join(info.AssetsDir, name+".py")
 
@@ -263,8 +265,7 @@ func NewNewAsset() *cobra.Command {
 				fmt.Println(format.Gray("--- " + assetPath + " ---"))
 				fmt.Println(body)
 				if withTest {
-					testBody := strings.ReplaceAll(testTemplate, "{{PKG}}", info.PackageName)
-					testBody = strings.ReplaceAll(testBody, "{{NAME}}", name)
+					testBody := renderTemplate(testTmpl, testData{Name: name, Package: info.PackageName})
 					testPath := filepath.Join(info.Root, "tests", "test_"+name+".py")
 					fmt.Println(format.Gray("--- " + testPath + " ---"))
 					fmt.Println(testBody)
@@ -284,8 +285,7 @@ func NewNewAsset() *cobra.Command {
 			fmt.Println(format.Green("Created " + assetPath))
 
 			if withTest {
-				testBody := strings.ReplaceAll(testTemplate, "{{PKG}}", info.PackageName)
-				testBody = strings.ReplaceAll(testBody, "{{NAME}}", name)
+				testBody := renderTemplate(testTmpl, testData{Name: name, Package: info.PackageName})
 				testsDir := filepath.Join(info.Root, "tests")
 				if err := os.MkdirAll(testsDir, 0o755); err != nil {
 					return err

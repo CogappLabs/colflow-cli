@@ -101,12 +101,17 @@ func NewESCheck() *cobra.Command {
 	var url, apiKey string
 	var insecure, asJSON, withIndices bool
 	cmd := &cobra.Command{
-		Use:   "es-check",
-		Short: "Test Elasticsearch connection (cluster health + optional indices)",
-		Long:  "Hits ES /_cluster/health. Reads ELASTICSEARCH_URL and ELASTICSEARCH_API_KEY env vars. With --indices, also lists indices via /_cat/indices.",
+		Use:   "es-check [index]",
+		Short: "Test Elasticsearch connection; optionally check a specific index",
+		Long:  "Hits ES /_cluster/health. Reads ELASTICSEARCH_URL and ELASTICSEARCH_API_KEY env vars. With an index argument, also reports that index's health + doc count. With --indices, lists all indices.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			base := esURL(url)
 			key := esAuth(apiKey)
+			indexArg := ""
+			if len(args) == 1 {
+				indexArg = args[0]
+			}
 
 			var health esClusterHealth
 			if err := esGet(base+"/_cluster/health", key, insecure, &health); err != nil {
@@ -128,13 +133,37 @@ func NewESCheck() *cobra.Command {
 				sort.Slice(indices, func(i, j int) bool { return indices[i].Index < indices[j].Index })
 			}
 
+			var indexInfo *esIndex
+			var indexErr error
+			if indexArg != "" {
+				var rows []esIndex
+				indexErr = esGet(base+"/_cat/indices/"+indexArg+"?format=json&bytes=b", key, insecure, &rows)
+				if indexErr == nil && len(rows) > 0 {
+					indexInfo = &rows[0]
+				}
+			}
+
 			if asJSON {
-				PrintJSON(map[string]any{
+				out := map[string]any{
 					"ok":      true,
 					"url":     base,
 					"health":  health,
 					"indices": indices,
-				})
+				}
+				if indexArg != "" {
+					ix := map[string]any{"name": indexArg, "exists": indexInfo != nil}
+					if indexErr != nil {
+						ix["error"] = indexErr.Error()
+					}
+					if indexInfo != nil {
+						ix["health"] = indexInfo.Health
+						ix["status"] = indexInfo.Status
+						ix["docs_count"] = indexInfo.DocsCount
+						ix["store_size"] = indexInfo.StoreSize
+					}
+					out["index"] = ix
+				}
+				PrintJSON(out)
 				return nil
 			}
 
@@ -148,6 +177,21 @@ func NewESCheck() *cobra.Command {
 				fmt.Printf("  %-14s %s\n", "Unassigned:", format.Red(fmt.Sprintf("%d", health.UnassignedShards)))
 			}
 			fmt.Printf("  %-14s %.1f%%\n", "Active %:", health.ActiveShardsPercentAsNumber)
+
+			if indexArg != "" {
+				fmt.Println()
+				fmt.Println(format.Bold("Index:"), indexArg)
+				if indexInfo == nil {
+					fmt.Println("  ", format.Red("not found"))
+					if indexErr != nil {
+						fmt.Println(format.Gray("  "+indexErr.Error()))
+					}
+				} else {
+					fmt.Printf("  %-14s %s\n", "Health:", colourESStatus(indexInfo.Health))
+					fmt.Printf("  %-14s %s\n", "Docs:", indexInfo.DocsCount)
+					fmt.Printf("  %-14s %s\n", "Size:", humanBytesStr(indexInfo.StoreSize))
+				}
+			}
 
 			if withIndices && len(indices) > 0 {
 				fmt.Println()

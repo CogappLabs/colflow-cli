@@ -1,0 +1,43 @@
+"""{{.Title}}."""
+
+import dagster as dg
+import pandera.polars as pa
+import polars as pl
+from collection_flow.support.polars.validation import validate_dataframe
+{{- if .IsExtract}}
+from collection_flow.support.dagster.retry_policies import api_retry_policy
+{{- end}}
+
+
+@dg.asset(
+    group_name="{{.Group}}",
+    kinds={{"{"}}{{range $i, $k := .Kinds}}{{if $i}}, {{end}}"{{$k}}"{{end}}{{"}"}},
+    description="{{.Title}}.",
+{{- if .IsExtract}}
+    retry_policy=api_retry_policy,
+{{- end}}
+)
+def {{.Name}}(
+    context: dg.AssetExecutionContext,
+{{- range .Upstream}}
+    {{.}}: pl.LazyFrame,
+{{- end}}
+) -> pl.LazyFrame:
+    """{{.Title}}."""
+    raise NotImplementedError("Implement {{.Name}}")
+
+
+class {{.Class}}Schema(pa.DataFrameModel):
+    """Schema for {{.Name}}."""
+
+    class Config:
+        name = "{{.Name}}"
+
+
+@dg.asset_check(asset="{{.Name}}", name="schema", blocking=True)
+def {{.Name}}_schema_check(df: pl.LazyFrame) -> dg.AssetCheckResult:
+    """Check {{.Name}} matches its schema."""
+    return validate_dataframe(df, {{.Class}}Schema).to_asset_check_result(
+        asset_key="{{.Name}}",
+        check_name="schema",
+    )
