@@ -29,7 +29,8 @@ go build -o colflow ./cmd/colflow
 
 - `DAGSTER_GRAPHQL_URL` (default `http://127.0.0.1:3000/graphql`)
 - `DAGSTER_AUTH` — `user:pass` for HTTP basic auth
-- `--url` / `--auth` per-command flags
+- `--url` / `-u` per-command flag — base URL or full GraphQL URL; `/graphql` is appended if missing
+- `--auth` / `-a` per-command flag — `user:pass` HTTP basic auth
 
 ### Elasticsearch
 
@@ -76,7 +77,7 @@ A bare name like `colflow inspect constituents` resolves to `<root>/output/const
 
 ### Dagster
 
-All commands accept `--json` for machine-readable output, `--url` / `-u` to override the Dagster URL, and `--auth` / `-a` for HTTP basic auth.
+All Dagster-touching commands accept `--json` for machine-readable output, `--url` / `-u` to override the Dagster URL, and `--auth` / `-a` for HTTP basic auth. (This includes `inspect` and `new-asset`, both of which look up Dagster metadata.)
 
 Commands that take an argument (`--id`, `--key`, `--job`) show an interactive picker if the argument is omitted. Enter `0` to cancel.
 
@@ -142,12 +143,18 @@ Extracts step failure events with stack traces. Far quicker than `colflow logs -
 
 #### `colflow tail` — live-follow a running job
 
-Polls for new log events and streams them. Exits when the run completes.
+Polls for new log events and streams them. Exits when the run completes. With `--json`, emits one NDJSON event per line plus a final summary object.
 
 ```sh
 colflow tail --id <runId>
 colflow tail --id <runId> --interval 5
+colflow tail --id <runId> --json
 ```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--id` | -- | (picker) | Run ID |
+| `--interval` | `-i` | 3 | Poll interval (seconds) |
 
 #### `colflow launch` — start a job run
 
@@ -155,6 +162,10 @@ colflow tail --id <runId> --interval 5
 colflow launch                      # picker if multiple jobs
 colflow launch --job my_pipeline
 ```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--job` | `-j` | (picker) | Job name to launch |
 
 #### `colflow materialise` — re-run specific assets
 
@@ -164,6 +175,11 @@ Bypasses the job system to materialise a subset of assets via `__ASSET_JOB`.
 colflow materialise --asset constituents
 colflow materialise --assets "constituents,exhibitions,objects"
 ```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--asset` | -- | -- | Single asset name |
+| `--assets` | -- | -- | Comma-separated asset names |
 
 #### `colflow cancel` — cancel a run
 
@@ -204,6 +220,10 @@ Group, compute kind, dependencies, staleness, recent materialisations, kinds, ta
 colflow asset --key constituents
 ```
 
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--key` | `-k` | (picker) | Asset key path |
+
 #### `colflow graph` — asset dependency graph
 
 ```sh
@@ -221,8 +241,13 @@ colflow stale
 #### `colflow config` — run config schema for a job
 
 ```sh
+colflow config                      # uses default job
 colflow config --job famsf_pipeline
 ```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--job` | `-j` | `full_pipeline` | Job name |
 
 ### Sensors and jobs
 
@@ -258,19 +283,83 @@ colflow debug
 
 ### Data
 
-- `colflow inspect [file | asset_name]` — schema tree (Parquet list/map collapsed), size, rows, populated %, plus Dagster metadata when the asset is known: group, kinds, stale status + causes, last materialisation datetime, upstream/downstream deps.
-- `colflow sample [file | asset_name] -n 5 [--where field=value]` — pretty-print rows, or `--json`. Repeatable `--where` filters by equality on a (possibly nested) field path.
+`inspect` vs `sample` — both take a parquet file or asset name, but answer different questions:
 
-No-arg form lists `output/` with tags: `[asset]` (matches Dagster), `[orphan]` (no match).
+| | `inspect` | `sample` |
+|---|---|---|
+| Scope | Whole-file stats | N rows from file |
+| Shows | Size, row count, schema tree, per-column populated % | Actual row values (pretty-printed or JSON) |
+| Filtering | None | `--where field=value` (repeatable, dot-paths) |
+| Dagster info | Yes (group, stale, deps, last mat) | No |
+| Use when | "What's the shape of this file?" | "Show me actual rows / find a specific record" |
+
+#### `colflow inspect [file | asset_name]` — parquet schema + Dagster metadata
+
+Reports size, row count, row-group count, schema tree (Parquet list/map encodings collapsed to `foo[].bar` and `foo{}.bar`), and per-column populated count + percentage. When the basename matches a Dagster asset, also prints group, compute kind, kinds, stale status + causes, last materialisation timestamp, jobs, and upstream/downstream deps.
+
+```sh
+colflow inspect                      # picker over output/
+colflow inspect constituents         # bare name → output/constituents.parquet
+colflow inspect ./path/to/foo.parquet
+colflow inspect constituents --json  # full structured output incl. dagster summary
+```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--url` | `-u` | `$DAGSTER_GRAPHQL_URL` or `http://127.0.0.1:3000` | Dagster base URL (for the Dagster metadata lookup) |
+| `--auth` | `-a` | `$DAGSTER_AUTH` | HTTP basic auth (`user:pass`) |
+| `--json` | -- | false | Emit structured JSON (path, size_bytes, rows, row_groups, schema, columns, dagster) |
+
+JSON shape:
+
+```json
+{
+  "path": "...",
+  "size_bytes": 12345,
+  "rows": 1000,
+  "row_groups": 1,
+  "schema": [{"name": "...", "type": "...", "depth": 0, "repeated": false}, ...],
+  "columns": [{"name": "foo[].bar", "null_count": 0, "populated": 1000, "populated_pct": 100.0}, ...],
+  "dagster": {"asset": "...", "group": "...", "stale_status": "FRESH", "stale_causes": [], "upstream": [], "downstream": [], "last_materialization": {...}}
+}
+```
+
+Note: `--json` populates `null_count` via a full-scan over each column chunk's pages. Slow on huge files.
+
+#### `colflow sample [file | asset_name]` — pretty-print or JSON-dump rows
+
+Reads N rows, optionally filtered. With filters, scans in 64-row batches up to `--max-scan` rows.
+
+```sh
+colflow sample constituents
+colflow sample constituents -n 20
+colflow sample constituents --where status=published
+colflow sample constituents --where artist.name=Alice --where year=2024
+colflow sample constituents --json
+```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--rows` | `-n` | 5 | Number of rows to return |
+| `--where` | -- | -- | Filter rows by `field=value` (repeatable, dot-paths for nested). Use `null` or empty for null match |
+| `--max-scan` | -- | 1000000 | Max rows scanned when filtering before giving up |
+| `--json` | -- | false | Emit JSON array of row objects |
+
+No-arg form (for `inspect` and `sample`) lists `output/` with tags: `[asset]` (matches a Dagster asset), `[cache]` (filename ends `_cache`), `[orphan]` (no match — only shown when Dagster is reachable).
 
 ### Elasticsearch
 
-- `colflow es-check [index]` — verify cluster reachability. Reports cluster name + status (or `serverless (reachable)` for Elastic Cloud Serverless). With an index argument, also reports its health, doc count, and store size.
-  - `--url` / `--api-key` accept plain values or `'$VAR'` to read from env / `.env`.
-  - `--indices` lists all indices via `/_cat/indices`.
-  - `--insecure` skips TLS verification.
-  - `--json` for structured output.
-  - Pretty error output with hints for common failure modes (401/403/404/429/503, DNS, connection-refused, TLS, timeout).
+#### `colflow es-check [index]` — verify cluster reachability
+
+Reports cluster name + status (or `serverless (reachable)` for Elastic Cloud Serverless). With an index argument, also reports health, doc count, and store size. Pretty error output with hints for common failure modes (401/403/404/429/503, DNS, connection-refused, TLS, timeout).
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--url` | `$ELASTICSEARCH_URL` or `http://localhost:9200` | Base URL, or `'$VAR'` to read from any env var |
+| `--api-key` | `$ELASTICSEARCH_API_KEY` | API key, or `'$VAR'` to read from any env var |
+| `--insecure` | false | Skip TLS verification |
+| `--indices` | false | List all indices via `/_cat/indices` |
+| `--json` | false | Output as JSON |
 
 Examples:
 
@@ -297,7 +386,15 @@ colflow es-check --indices --json
 
 Templates align with collection-flow Commandments: every asset has a `description=`, every schema has `class Config: name = "..."`, and `group=extract` adds `kinds={"http"}` + `retry_policy=api_retry_policy`.
 
-Flags: `--upstream=a,b`, `--group=name`, `--title="..."`, `--test=false`, `--dry-run`.
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--upstream` | -- | -- | Comma-separated upstream asset names (become function args) |
+| `--group` | `-g` | `transform` | Asset group name |
+| `--title` | `-t` | (derived) | Asset title (default: derived from name) |
+| `--test` | -- | true | Also scaffold `tests/test_<name>.py` |
+| `--dry-run` | -- | false | Print without writing |
+| `--url` | `-u` | `$DAGSTER_GRAPHQL_URL` or `http://127.0.0.1:3000` | Dagster base URL (for live asset list lookup) |
+| `--auth` | `-a` | `$DAGSTER_AUTH` | HTTP basic auth (`user:pass`) |
 
 ## colflow vs dg — when to use which
 

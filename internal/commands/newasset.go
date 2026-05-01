@@ -176,14 +176,15 @@ func NewNewAsset() *cli.Command {
 		Usage:       "Scaffold a new Dagster asset (Polars + Pandera schema + check)",
 		Description: "Scaffold a new asset. With no name, runs interactively; otherwise uses flags.",
 		ArgsUsage:   "[name]",
-		Flags: []cli.Flag{
+		Flags: append(CommonFlags(),
 			&cli.StringFlag{Name: "upstream", Usage: "Comma-separated upstream asset names (become function args)"},
 			&cli.StringFlag{Name: "group", Aliases: []string{"g"}, Value: "transform", Usage: "Asset group name"},
 			&cli.StringFlag{Name: "title", Aliases: []string{"t"}, Usage: "Asset title (default: derived from name)"},
 			&cli.BoolFlag{Name: "test", Value: true, Usage: "Also scaffold a tests/test_<name>.py file"},
 			&cli.BoolFlag{Name: "dry-run", Usage: "Print without writing"},
-		},
+		),
 		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			if c.NArg() > 1 {
 				return fmt.Errorf("new-asset takes at most 1 argument")
 			}

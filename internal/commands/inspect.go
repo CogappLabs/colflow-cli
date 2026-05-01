@@ -92,10 +92,9 @@ func NewInspect() *cli.Command {
 		Usage:       "Inspect a parquet file: schema, row count, populated %, Dagster info",
 		Description: "Inspect a parquet file. If no path given, lists output/ to pick. Bare names resolve to <project>/output/<name>.parquet.",
 		ArgsUsage:   "[file.parquet | asset_name]",
-		Flags: []cli.Flag{
-			&cli.BoolFlag{Name: "json", Usage: "Output as JSON (LLM-friendly)"},
-		},
+		Flags: CommonFlags(),
 		Action: func(ctx context.Context, c *cli.Command) error {
+			ApplyCommon(c)
 			if c.NArg() > 1 {
 				return fmt.Errorf("inspect takes at most 1 argument")
 			}
