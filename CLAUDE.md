@@ -34,7 +34,7 @@ Go CLI for Dagster collection-flow pipelines. Wraps Dagster GraphQL, reads Parqu
 
 ## Available commands
 
-`status`, `runs`, `run`, `logs`, `errors`, `tail`, `launch`, `materialise`, `cancel`, `reload`, `diff`, `assets`, `asset`, `graph`, `stale`, `config`, `sensors`, `jobs`, `inspect`, `sample`, `new-asset`, `es-check`, `start`, `debug`. (24 commands.)
+`status`, `runs`, `run`, `logs`, `errors`, `tail`, `launch`, `materialise`, `recheck`, `cancel`, `reload`, `diff`, `assets`, `asset`, `graph`, `stale`, `config`, `sensors`, `jobs`, `inspect`, `sample`, `new-asset`, `es-check`, `start`, `debug`. (25 commands.)
 
 ## GraphQL schema notes
 

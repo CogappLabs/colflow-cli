@@ -583,6 +583,79 @@ func LaunchAssetRun(assetNames []string) (string, error) {
 	return data.LaunchRun.Run.RunID, nil
 }
 
+// AssetCheckSelection identifies a single asset check on a single asset.
+//
+// The Dagster GraphQL ExecutionParams.assetCheckSelection field expects a
+// list of { assetKey: { path: [...] }, name: "..." } entries.
+type AssetCheckSelection struct {
+	AssetPath []string
+	CheckName string
+}
+
+// LaunchAssetCheckRun runs a set of asset checks without rematerializing
+// the underlying assets. Useful for clearing red asset-check status after
+// a schema fix where the asset itself doesn't need to re-run.
+func LaunchAssetCheckRun(selections []AssetCheckSelection) (string, error) {
+	repo, err := getRepository()
+	if err != nil {
+		return "", err
+	}
+	gql := `
+		mutation($executionParams: ExecutionParams!) {
+			launchRun(executionParams: $executionParams) {
+				... on LaunchRunSuccess { run { runId } }
+				... on PipelineNotFoundError { message }
+				... on PythonError { message }
+				... on InvalidStepError { invalidStepKey }
+			}
+		}
+	`
+	var data struct {
+		LaunchRun struct {
+			Run *struct {
+				RunID string `json:"runId"`
+			} `json:"run"`
+			Message        *string `json:"message"`
+			InvalidStepKey *string `json:"invalidStepKey"`
+		} `json:"launchRun"`
+	}
+	checks := make([]map[string]any, 0, len(selections))
+	for _, s := range selections {
+		checks = append(checks, map[string]any{
+			"assetKey": map[string]any{"path": s.AssetPath},
+			"name":     s.CheckName,
+		})
+	}
+	vars := map[string]any{
+		"executionParams": map[string]any{
+			"selector": map[string]any{
+				"pipelineName":           "__ASSET_JOB",
+				"repositoryName":         repo.Name,
+				"repositoryLocationName": repo.Location.Name,
+				"assetCheckSelection":    checks,
+				// Empty asset selection — we want checks only, no
+				// asset rematerialisation. Dagster requires the field
+				// to be present (even empty) when assetCheckSelection
+				// is provided.
+				"assetSelection": []any{},
+			},
+		},
+	}
+	if err := Query(gql, vars, &data); err != nil {
+		return "", err
+	}
+	if data.LaunchRun.InvalidStepKey != nil {
+		return "", fmt.Errorf("invalid step key: %s", *data.LaunchRun.InvalidStepKey)
+	}
+	if data.LaunchRun.Message != nil {
+		return "", fmt.Errorf("%s", *data.LaunchRun.Message)
+	}
+	if data.LaunchRun.Run == nil {
+		return "", fmt.Errorf("LaunchAssetCheckRun: unexpected response")
+	}
+	return data.LaunchRun.Run.RunID, nil
+}
+
 func GetStaleAssets() ([]StaleAssetNode, error) {
 	gql := `
 		query {

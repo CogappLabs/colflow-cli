@@ -181,6 +181,23 @@ colflow materialise --assets "constituents,exhibitions,objects"
 | `--asset` | -- | -- | Single asset name |
 | `--assets` | -- | -- | Comma-separated asset names |
 
+#### `colflow recheck` — re-run asset checks (without rematerialising)
+
+Clears red asset-check status in the UI after a schema or check-code fix
+where the asset's parquet output is unchanged. Selectors are
+`asset:check_name`; multi-segment asset paths use slashes.
+
+```sh
+colflow recheck --check objects:objects_schema_check
+colflow recheck --checks "objects:objects_schema_check,objects:objects_unique_id"
+colflow recheck --check media_neon/image_metadata_row:row_count
+```
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--check` | -- | -- | Single selector — `asset:check_name` |
+| `--checks` | -- | -- | Comma-separated selectors |
+
 #### `colflow cancel` — cancel a run
 
 ```sh
@@ -407,6 +424,7 @@ Templates align with collection-flow Commandments: every asset has a `descriptio
 | Validate definitions | -- | `dg check defs` |
 | Launch a job | `colflow launch --job X` | `dg launch --job X` |
 | Launch specific assets | `colflow materialise --assets X,Y` | `dg launch --assets X,Y` |
+| Re-run asset checks only | `colflow recheck --check asset:check_name` | (no flag — must rematerialise asset) |
 | List recent runs | `colflow runs` | -- |
 | View run logs / filter errors | `colflow logs --level ERROR` | -- |
 | Tracebacks from a failure | `colflow errors --id X` | -- |
@@ -499,7 +517,7 @@ The CLI queries the standard Dagster GraphQL API:
 | `sensorsOrError` | `sensors` | Sensor state and recent ticks |
 | `repositoryOrError` | `jobs` | List jobs in the repository |
 | `repositoriesOrError` | (internal) | Auto-discover repo name/location |
-| `launchRun` | `launch`, `materialise` | Mutation: start a run |
+| `launchRun` | `launch`, `materialise`, `recheck` | Mutation: start a run |
 | `terminateRun` | `cancel` | Mutation: cancel a running job |
 | `reloadRepositoryLocation` | `reload` | Mutation: reload code location |
 

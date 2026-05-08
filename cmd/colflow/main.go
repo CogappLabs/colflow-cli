@@ -49,6 +49,7 @@ func main() {
 			commands.NewReload(),
 			commands.NewErrors(),
 			commands.NewMaterialise(),
+			commands.NewRecheck(),
 			commands.NewStale(),
 			commands.NewConfig(),
 			commands.NewDiff(),
